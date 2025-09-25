@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>高機能TODOリスト</title>
+  <style>
+    .completed { text-decoration: line-through; color: #888; }
+  </style>
+</head>
+<body>
+  <h1>TODOリスト</h1>
+  <input type="text" id="todoInput" placeholder="新しいタスク">
+  <button id="addButton">追加</button>
+  <hr>
+  <input type="text" id="searchInput" placeholder="タスクを検索">
+  <button id="clearButton">クリア</button>
+  <hr>
+  <ul id="todoList"></ul>
+  <hr>
+  <button id="clearCompletedButton">完了済みを削除</button>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

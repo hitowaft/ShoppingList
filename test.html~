@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <h1>ユーザーリスト</h1>
+  <ul id="user-list">
+    <!-- ここにJavaScriptでユーザー名を追加していく -->
+  </ul>
+</body>
+</html>
