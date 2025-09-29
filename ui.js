@@ -1,4 +1,3 @@
-import { state } from './state.js';
 let listElement;
 let onDeleteCallback;
 let onToggleCallback;
@@ -13,7 +12,7 @@ export function initUI(config) {
   editModeButtonElement = config.editModeButtonElement;
 }
 
-function createTaskElement(task, onDelete, onToggle, onUpdate) {
+function createTaskElement(task, onDelete, onToggle, onUpdate, isEditing, state) {
   const li = document.createElement('li');
   const span = document.createElement('span');
   const delButton = document.createElement('button');
@@ -32,13 +31,13 @@ function createTaskElement(task, onDelete, onToggle, onUpdate) {
   });
 
   span.addEventListener('click', () => {
-    if (state.isEditing) return;
+    if (isEditing) return;
 
     onToggle(task.id);
   })
 
   span.addEventListener('click', () => {
-    if (!state.isEditing) return;
+    if (!isEditing) return;
 
     const input = document.createElement('input');
     input.type = 'text';
@@ -68,7 +67,7 @@ function createTaskElement(task, onDelete, onToggle, onUpdate) {
   li.appendChild(checkbox);
   li.appendChild(span);
 
-  if (state.isEditing) {
+  if (isEditing) {
     const delButton = document.createElement('button');
     delButton.textContent = '削除';
     delButton.addEventListener('click', () => {
@@ -102,7 +101,14 @@ export function render(state) {
   }
 
   todosToRender.forEach(todo => {
-    const taskElement = createTaskElement(todo, onDeleteCallback, onToggleCallback, onUpdateCallback);
+    const taskElement = createTaskElement(
+      todo,
+      onDeleteCallback,
+      onToggleCallback,
+      onUpdateCallback,
+      state.isEditing,
+      state
+    );
     listElement.appendChild(taskElement);
   });
 }
