@@ -1,4 +1,4 @@
-import { state, addTodo, deleteTodo, toggleTodo, clearCompletedTodos, setSearchKeyword, toggleEditMode } from './state.js';
+import { state, addTodo, deleteTodo, toggleTodo, clearCompletedTodos, setSearchKeyword, toggleEditMode, updateTodoText } from './state.js';
 import { saveTasks, loadTasks } from "./storage.js";
 import { initUI, render } from "./ui.js";
 
@@ -43,12 +43,19 @@ const handleClearCompleted = () => {
   handleStateUpdate();
 };
 
+const handleUpdateTaskText = (taskId, newText) => {
+  updateTodoText(taskId, newText);
+  handleStateUpdate();
+}
+
 // --- UIの初期化 ---
 initUI({
   listElement: listElement,
   state: state,
-  onDelete: handleDeleteTask, // 新しいハンドラ関数を渡す
-  onToggle: handleToggleTask  // 新しいハンドラ関数を渡す
+  onDelete: handleDeleteTask, 
+  onToggle: handleToggleTask,
+  onUpdate: handleUpdateTaskText,
+  editModeButtonElement: editModeButton
 });
 
 // --- イベントリスナーの設定 ---

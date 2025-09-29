@@ -31,3 +31,16 @@ export function setSearchKeyword(keyword) {
 export function toggleEditMode() {
     state.isEditing = !state.isEditing;
 }
+
+/**
+ * 指定されたIDのToDoタスクのテキストを更新する
+ * @param {number} id 更新するタスクのID
+ * @param {string} newText 新しいタスクのテキスト
+ */
+export function updateTodoText(id, newText) {
+  const todoToUpdate = state.todos.find(todo => todo.id === id);
+
+  if (todoToUpdate) {
+    todoToUpdate.text = newText;
+  }
+}
