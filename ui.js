@@ -1,3 +1,4 @@
+import { state } from './state.js';
 let listElement;
 let onDeleteCallback;
 let onToggleCallback;
@@ -21,7 +22,6 @@ function createTaskElement(task, onDelete, onToggle) {
   }
 
   span.textContent = task.text;
-  delButton.textContent = '削除';
 
   checkbox.addEventListener('change', () => {
     onToggle(task.id);
@@ -31,13 +31,18 @@ function createTaskElement(task, onDelete, onToggle) {
     onToggle(task.id);
   })
 
-  delButton.addEventListener('click', () => {
-    onDelete(task.id);
-  });
-
   li.appendChild(checkbox);
   li.appendChild(span);
-  li.appendChild(delButton);
+
+  if (state.isEditing) {
+    const delButton = document.createElement('button');
+    delButton.textContent = '削除';
+    delButton.addEventListener('click', () => {
+      onDelete(task.id);
+    });
+    li.appendChild(delButton);
+  }
+  
   return li;
 }
 

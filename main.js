@@ -1,4 +1,4 @@
-import { state, addTodo, deleteTodo, toggleTodo, clearCompletedTodos, setSearchKeyword } from './state.js';
+import { state, addTodo, deleteTodo, toggleTodo, clearCompletedTodos, setSearchKeyword, toggleEditMode } from './state.js';
 import { saveTasks, loadTasks } from "./storage.js";
 import { initUI, render } from "./ui.js";
 
@@ -9,6 +9,7 @@ const listElement = document.getElementById('todoList');
 const searchInput = document.getElementById('searchInput');
 const clearButton = document.getElementById('clearButton');
 const clearCompletedButton = document.getElementById('clearCompletedButton');
+const editModeButton = document.getElementById('editModeButton');
 
 // --- 状態が更新された後のお決まり処理をまとめた関数 ---
 const handleStateUpdate = () => {
@@ -17,7 +18,6 @@ const handleStateUpdate = () => {
 };
 
 // --- イベントハンドラ関数 ---
-// (イベントリスナーからロジックを分離すると、さらに見通しが良くなる)
 
 const handleAddTask = () => {
   const text = inputElement.value.trim();
@@ -74,6 +74,11 @@ clearButton.addEventListener('click', () => {
 });
 
 clearCompletedButton.addEventListener('click', handleClearCompleted);
+
+editModeButton.addEventListener('click', () => {
+  toggleEditMode();
+  handleStateUpdate();
+})
 
 // --- アプリケーションの開始 ---
 const initialTasks = loadTasks();

@@ -1,6 +1,7 @@
 export const state = {
   todos: [],
-  searchKeyword: ''
+  searchKeyword: '',
+  isEditing: false
 };
 
 export function addTodo (taskText) {
@@ -25,4 +26,8 @@ export function clearCompletedTodos() {
 
 export function setSearchKeyword(keyword) {
   state.searchKeyword = keyword;
+}
+
+export function toggleEditMode() {
+    state.isEditing = !state.isEditing;
 }
