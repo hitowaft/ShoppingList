@@ -88,21 +88,21 @@ export function render(state) {
     editModeButtonElement.textContent = '編集'
   }
 
-  let todosToRender;
+  let itemsToRender;
 
   if (state.searchKeyword) {
     const keyword = state.searchKeyword.toLowerCase();
 
-    todosToRender = state.todos.filter(todo => {
-      return todo.text.toLowerCase().includes(keyword);
+    itemsToRender = state.items.filter(item => {
+      return item.text.toLowerCase().includes(keyword);
     });
   } else {
-    todosToRender = state.todos;
+    itemsToRender = state.items;
   }
 
-  todosToRender.forEach(todo => {
+  itemsToRender.forEach(item => {
     const taskElement = createTaskElement(
-      todo,
+      item,
       onDeleteCallback,
       onToggleCallback,
       onUpdateCallback,

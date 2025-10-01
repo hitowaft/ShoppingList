@@ -1,27 +1,27 @@
 export const state = {
-  todos: [],
+  items: [],
   searchKeyword: '',
   isEditing: false
 };
 
-export function addTodo (taskText) {
+export function additem (taskText, id) {
   if (!taskText) return;
-  state.todos.push({id: Date.now(), text: taskText, completed: false});
+  state.items.push({id: id, text: taskText, completed: false});
 }
 
-export function deleteTodo (taskId) {
-  state.todos = state.todos.filter(todo => todo.id !== taskId);
+export function deleteitem (taskId) {
+  state.items = state.items.filter(item => item.id !== taskId);
 }
 
-export function toggleTodo (taskId) {
-  const targetTodo = state.todos.find(todo => todo.id === taskId);
-  if (targetTodo) {
-    targetTodo.completed = !targetTodo.completed;
+export function toggleitem (taskId) {
+  const targetitem = state.items.find(item => item.id === taskId);
+  if (targetitem) {
+    targetitem.completed = !targetitem.completed;
   }
 }
 
-export function clearCompletedTodos() {
-  state.todos = state.todos.filter(todo => todo.completed === false);  
+export function clearCompleteditems() {
+  state.items = state.items.filter(item => item.completed === false);  
 }
 
 export function setSearchKeyword(keyword) {
@@ -33,14 +33,14 @@ export function toggleEditMode() {
 }
 
 /**
- * 指定されたIDのToDoタスクのテキストを更新する
+ * 指定されたIDのitemタスクのテキストを更新する
  * @param {number} id 更新するタスクのID
  * @param {string} newText 新しいタスクのテキスト
  */
-export function updateTodoText(id, newText) {
-  const todoToUpdate = state.todos.find(todo => todo.id === id);
+export function updateitemText(id, newText) {
+  const itemToUpdate = state.items.find(item => item.id === id);
 
-  if (todoToUpdate) {
-    todoToUpdate.text = newText;
+  if (itemToUpdate) {
+    itemToUpdate.text = newText;
   }
 }
