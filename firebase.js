@@ -1,7 +1,7 @@
 // Firebaseの基本機能をインポート
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 // Firestoreの機能をインポート
-import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, writeBatch, onSnapshot, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyD3sGjRILvQQmXBCXuaDW2Lv1b_3w46Ku8",
@@ -18,4 +18,4 @@ const db = getFirestore(app);
 
 // --- このファイルから他のファイルへ提供する機能 ---
 // db と、よく使うFirestoreの関数をまとめてエクスポートする
-export { db, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, writeBatch };
+export { db, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, writeBatch, onSnapshot, orderBy };

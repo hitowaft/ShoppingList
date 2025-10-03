@@ -1,4 +1,4 @@
-import { db, collection, addDoc, getDocs } from "./firebase.js";
+import { db, collection, addDoc, onSnapshot, query, orderBy } from "./firebase.js";
 import { state, additem, deleteitem, toggleitem, clearCompleteditems, setSearchKeyword, toggleEditMode, updateitemText } from './state.js';
 import { updateItemStatus, deleteDbItem, clearCompletedDbItems, updateDbItemText } from "./storage.js";
 import { initUI, render } from "./ui.js";
@@ -15,6 +15,7 @@ const toggleSearchButton = document.getElementById('toggleSearchButton');
 const searchOptionsSection = document.getElementById('searchOptions');
 
 let isSearchVisible = false;
+let unsubscribeFromItems = null;
 
 function updateSearchVisibility(visible, { focus = false } = {}) {
   if (!toggleSearchButton || !searchOptionsSection) return;
@@ -38,6 +39,39 @@ const handleStateUpdate = () => {
     updateSearchVisibility(true);
   }
 };
+
+function startItemsSubscription() {
+  const itemsQuery = query(collection(db, "shopping-list"), orderBy("createdAt", "desc"));
+
+  unsubscribeFromItems = onSnapshot(
+    itemsQuery,
+    (querySnapshot) => {
+      const fetchedItems = [];
+      querySnapshot.forEach((doc) => {
+        const itemData = doc.data();
+
+        fetchedItems.push({
+          id: doc.id,
+          text: itemData.name,
+          completed: itemData.completed,
+        });
+      });
+
+      state.items = fetchedItems;
+      handleStateUpdate();
+    },
+    (error) => {
+      console.error("買い物リストの購読中にエラーが発生しました:", error);
+    }
+  );
+}
+
+function stopItemsSubscription() {
+  if (unsubscribeFromItems) {
+    unsubscribeFromItems();
+    unsubscribeFromItems = null;
+  }
+}
 
 // --- イベントハンドラ関数 ---
 
@@ -115,31 +149,6 @@ const handleUpdateItemText = async (itemId, newText) => {
   
 }
 
-const fetchAndRenderItems = async () => {
-  try {
-    const querySnapshot = await getDocs(collection(db, "shopping-list"));
-
-    const fetchedItems = [];
-    querySnapshot.forEach((doc) => {
-      const itemData = doc.data();
-
-      fetchedItems.push({
-        id: doc.id,
-        text: itemData.name,
-        completed: itemData.completed
-      });
-    });
-
-    state.items = fetchedItems;
-    render(state);
-
-    console.log('Firestoreからデータを正常に読み込みました！', fetchedItems);
-
-  } catch (error) {
-    console.error("データの読み込み中にエラーが発生しました:", error);
-    alert('データの読み込みに失敗しました。');
-  }
-}
 // --- UIの初期化 ---
 initUI({
   listElement: listElement,
@@ -184,9 +193,4 @@ editModeButton.addEventListener('click', () => {
 })
 
 // --- アプリケーションの開始 ---
-// const initialItems = loadItems();
-// if (initialItems.length > 0) {
-//     state.items = initialItems;
-// }
-// render(state);; // 初回描画
-fetchAndRenderItems();
+startItemsSubscription();
