@@ -22,6 +22,7 @@ function createTaskElement(task, onDelete, onToggle, onUpdate, isEditing, state)
   checkbox.checked = task.completed;
   if (task.completed) {
     span.classList.add('completed');
+    li.classList.add('completed');
   }
 
   span.textContent = task.text;

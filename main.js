@@ -11,10 +11,32 @@ const searchInput = document.getElementById('searchInput');
 const clearButton = document.getElementById('clearButton');
 const clearCompletedButton = document.getElementById('clearCompletedButton');
 const editModeButton = document.getElementById('editModeButton');
+const toggleSearchButton = document.getElementById('toggleSearchButton');
+const searchOptionsSection = document.getElementById('searchOptions');
+
+let isSearchVisible = false;
+
+function updateSearchVisibility(visible, { focus = false } = {}) {
+  if (!toggleSearchButton || !searchOptionsSection) return;
+
+  isSearchVisible = visible;
+  toggleSearchButton.setAttribute('aria-expanded', String(visible));
+  searchOptionsSection.setAttribute('aria-hidden', String(!visible));
+  toggleSearchButton.textContent = visible ? '検索を閉じる' : '検索オプション';
+  searchOptionsSection.classList.toggle('is-hidden', !visible);
+
+  if (visible && focus) {
+    searchInput?.focus();
+  }
+}
 
 // --- 状態が更新された後のお決まり処理をまとめた関数 ---
 const handleStateUpdate = () => {
   render(state);
+
+  if (state.searchKeyword && !isSearchVisible) {
+    updateSearchVisibility(true);
+  }
 };
 
 // --- イベントハンドラ関数 ---
@@ -148,6 +170,10 @@ clearButton.addEventListener('click', () => {
   searchInput.value = '';
   setSearchKeyword('');
   handleStateUpdate();
+});
+
+toggleSearchButton?.addEventListener('click', () => {
+  updateSearchVisibility(!isSearchVisible, { focus: !isSearchVisible });
 });
 
 clearCompletedButton.addEventListener('click', handleClearCompleted);

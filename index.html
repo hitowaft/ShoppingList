@@ -4,22 +4,30 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>買い物リスト</title>
-  <style>
-    .completed { text-decoration: line-through; color: #888; }
-  </style>
+  <link rel="stylesheet" href="shopping-list.css">
 </head>
 <body>
-  <h1>買い物リスト</h1>
-  <input type="text" id="itemInput" placeholder="買うものを入力…">
-  <button id="addButton">追加</button>
-  <hr>
-  <input type="text" id="searchInput" placeholder="項目を検索">
-  <button id="clearButton">クリア</button>
-  <hr>
-  <ul id="itemList"></ul>
-  <hr>
-  <button id="clearCompletedButton">完了済みを削除</button>
-  <button id="editModeButton">編集</button>
+  <main class="app">
+    <header class="app-header">
+      <h1>買い物リスト</h1>
+      <button id="editModeButton" class="secondary" aria-live="polite">編集</button>
+    </header>
+    <section class="input-group">
+      <label class="sr-only" for="itemInput">買うものを入力</label>
+      <input type="text" id="itemInput" placeholder="買うものを入力…">
+      <button id="addButton">追加</button>
+    </section>
+    <ul id="itemList" class="item-list"></ul>
+    <section class="actions">
+      <button id="toggleSearchButton" class="secondary" aria-expanded="false" aria-controls="searchOptions">検索オプション</button>
+      <button id="clearCompletedButton" class="secondary">完了済みを削除</button>
+    </section>
+    <section id="searchOptions" class="filter-group is-hidden" aria-hidden="true">
+      <label class="sr-only" for="searchInput">項目を検索</label>
+      <input type="text" id="searchInput" placeholder="項目を検索">
+      <button id="clearButton" class="secondary">クリア</button>
+    </section>
+  </main>
 
   <script type="module" src="main.js"></script>
 </body>
