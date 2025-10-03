@@ -12,29 +12,28 @@ export function initUI(config) {
   editModeButtonElement = config.editModeButtonElement;
 }
 
-function createTaskElement(task, onDelete, onToggle, onUpdate, isEditing, state) {
+function createItemElement(item, onDelete, onToggle, onUpdate, isEditing, state) {
   const li = document.createElement('li');
   const span = document.createElement('span');
-  const delButton = document.createElement('button');
   const checkbox = document.createElement('input');
 
   checkbox.type = 'checkbox';
-  checkbox.checked = task.completed;
-  if (task.completed) {
+  checkbox.checked = item.completed;
+  if (item.completed) {
     span.classList.add('completed');
     li.classList.add('completed');
   }
 
-  span.textContent = task.text;
+  span.textContent = item.text;
 
   checkbox.addEventListener('change', () => {
-    onToggle(task.id);
+    onToggle(item.id);
   });
 
   span.addEventListener('click', () => {
     if (isEditing) return;
 
-    onToggle(task.id);
+    onToggle(item.id);
   })
 
   span.addEventListener('click', () => {
@@ -42,13 +41,13 @@ function createTaskElement(task, onDelete, onToggle, onUpdate, isEditing, state)
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.value = task.text;
+    input.value = item.text;
 
     const finishEditing = () => {
       const newText = input.value.trim();
 
-      if (newText && newText !== task.text) {
-        onUpdate(task.id, newText);
+      if (newText && newText !== item.text) {
+        onUpdate(item.id, newText);
       } else {
         render(state);
       }
@@ -72,7 +71,7 @@ function createTaskElement(task, onDelete, onToggle, onUpdate, isEditing, state)
     const delButton = document.createElement('button');
     delButton.textContent = '削除';
     delButton.addEventListener('click', () => {
-      onDelete(task.id);
+      onDelete(item.id);
     });
     li.appendChild(delButton);
   }
@@ -102,7 +101,7 @@ export function render(state) {
   }
 
   itemsToRender.forEach(item => {
-    const taskElement = createTaskElement(
+    const itemElement = createItemElement(
       item,
       onDeleteCallback,
       onToggleCallback,
@@ -110,6 +109,6 @@ export function render(state) {
       state.isEditing,
       state
     );
-    listElement.appendChild(taskElement);
+    listElement.appendChild(itemElement);
   });
 }

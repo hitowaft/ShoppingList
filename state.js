@@ -4,19 +4,19 @@ export const state = {
   isEditing: false
 };
 
-export function additem (taskText, id) {
-  if (!taskText) return;
-  state.items.push({id: id, text: taskText, completed: false});
+export function additem (itemText, id) {
+  if (!itemText) return;
+  state.items.push({ id: id, text: itemText, completed: false });
 }
 
-export function deleteitem (taskId) {
-  state.items = state.items.filter(item => item.id !== taskId);
+export function deleteitem (itemId) {
+  state.items = state.items.filter(item => item.id !== itemId);
 }
 
-export function toggleitem (taskId) {
-  const targetitem = state.items.find(item => item.id === taskId);
-  if (targetitem) {
-    targetitem.completed = !targetitem.completed;
+export function toggleitem (itemId) {
+  const targetItem = state.items.find(item => item.id === itemId);
+  if (targetItem) {
+    targetItem.completed = !targetItem.completed;
   }
 }
 
@@ -33,9 +33,9 @@ export function toggleEditMode() {
 }
 
 /**
- * 指定されたIDのitemタスクのテキストを更新する
- * @param {number} id 更新するタスクのID
- * @param {string} newText 新しいタスクのテキスト
+ * 指定されたIDの買い物アイテムのテキストを更新する
+ * @param {number} id 更新するアイテムのID
+ * @param {string} newText 新しいアイテム名
  */
 export function updateitemText(id, newText) {
   const itemToUpdate = state.items.find(item => item.id === id);

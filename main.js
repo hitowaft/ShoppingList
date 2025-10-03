@@ -41,7 +41,7 @@ const handleStateUpdate = () => {
 
 // --- イベントハンドラ関数 ---
 
-const handleAddTask = async () => {
+const handleAddItem = async () => {
   const itemName = inputElement.value.trim();
   if (itemName) {
     try {
@@ -63,11 +63,11 @@ const handleAddTask = async () => {
   }
 };
 
-const handleDeleteTask = async (taskId) => {
+const handleDeleteItem = async (itemId) => {
   try {
-    await deleteDbItem(taskId);
+    await deleteDbItem(itemId);
 
-    deleteitem(taskId);
+    deleteitem(itemId);
     handleStateUpdate();
   } catch (error) {
     console.error("アイテムの削除に失敗しました:", error);
@@ -77,14 +77,14 @@ const handleDeleteTask = async (taskId) => {
   
 };
 
-const handleToggleTask = async (taskId) => {
-  const itemToUpdate = state.items.find(item => item.id === taskId);
+const handleToggleItem = async (itemId) => {
+  const itemToUpdate = state.items.find(item => item.id === itemId);
   if (!itemToUpdate) return;
 
   try {
-    await updateItemStatus(taskId, itemToUpdate.completed);
+    await updateItemStatus(itemId, itemToUpdate.completed);
 
-    toggleitem(taskId);
+    toggleitem(itemId);
     handleStateUpdate();
   } catch (error) {
     console.error("アイテムの完了操作に失敗しました:", error);
@@ -102,11 +102,11 @@ const handleClearCompleted = () => {
   handleStateUpdate();
 };
 
-const handleUpdateTaskText = async (taskId, newText) => {
+const handleUpdateItemText = async (itemId, newText) => {
   try {
-    await updateDbItemText(taskId, newText);
+    await updateDbItemText(itemId, newText);
 
-    updateitemText(taskId, newText);
+    updateitemText(itemId, newText);
     handleStateUpdate();
   } catch (error) {
     console.error("アイテムの更新に失敗しました:", error);
@@ -144,20 +144,20 @@ const fetchAndRenderItems = async () => {
 initUI({
   listElement: listElement,
   state: state,
-  onDelete: handleDeleteTask, 
-  onToggle: handleToggleTask,
-  onUpdate: handleUpdateTaskText,
+  onDelete: handleDeleteItem, 
+  onToggle: handleToggleItem,
+  onUpdate: handleUpdateItemText,
   editModeButtonElement: editModeButton
 });
 
 // --- イベントリスナーの設定 ---
-addButton.addEventListener('click', handleAddTask);
+addButton.addEventListener('click', handleAddItem);
 inputElement.addEventListener('keydown', enterKeyPress);
 
 function enterKeyPress(event) {
   if (event.key === 'Enter' && !event.isComposing) {
     event.preventDefault();
-    handleAddTask();
+    handleAddItem();
   }
 }
 
@@ -184,9 +184,9 @@ editModeButton.addEventListener('click', () => {
 })
 
 // --- アプリケーションの開始 ---
-// const initialTasks = loadTasks();
-// if (initialTasks.length > 0) {
-//     state.items = initialTasks;
+// const initialItems = loadItems();
+// if (initialItems.length > 0) {
+//     state.items = initialItems;
 // }
 // render(state);; // 初回描画
 fetchAndRenderItems();
