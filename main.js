@@ -86,8 +86,6 @@ const handleAddItem = async () => {
       });
       console.log("Firestoreに保存成功！ ID: ", docRef.id);
 
-      additem(itemName, docRef.id);
-      handleStateUpdate(); 
       inputElement.value = '';
 
     } catch (error) {
@@ -101,8 +99,6 @@ const handleDeleteItem = async (itemId) => {
   try {
     await deleteDbItem(itemId);
 
-    deleteitem(itemId);
-    handleStateUpdate();
   } catch (error) {
     console.error("アイテムの削除に失敗しました:", error);
     alert("エラーが発生してアイテムを削除できませんでした。");
@@ -118,8 +114,6 @@ const handleToggleItem = async (itemId) => {
   try {
     await updateItemStatus(itemId, itemToUpdate.completed);
 
-    toggleitem(itemId);
-    handleStateUpdate();
   } catch (error) {
     console.error("アイテムの完了操作に失敗しました:", error);
     alert("エラーが発生して完了済みにできませんでした。");
@@ -131,17 +125,12 @@ const handleToggleItem = async (itemId) => {
 
 const handleClearCompleted = () => {
   clearCompletedDbItems();
-
-  clearCompleteditems();
-  handleStateUpdate();
 };
 
 const handleUpdateItemText = async (itemId, newText) => {
   try {
     await updateDbItemText(itemId, newText);
 
-    updateitemText(itemId, newText);
-    handleStateUpdate();
   } catch (error) {
     console.error("アイテムの更新に失敗しました:", error);
     alert("エラーが発生して更新できませんでした。");
