@@ -24,10 +24,11 @@ import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/
 // Authの機能をインポート
 import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-const firebaseApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+const firebaseApiKey = (typeof import.meta !== "undefined" && import.meta?.env?.VITE_FIREBASE_API_KEY)
+  || (typeof window !== "undefined" && window.__ENV?.VITE_FIREBASE_API_KEY);
 
 if (!firebaseApiKey) {
-  console.warn("VITE_FIREBASE_API_KEY is not set. Firebase SDK initialisation may fail.");
+  throw new Error("Firebase API key is not defined. Please provide VITE_FIREBASE_API_KEY via env.js.");
 }
 
 const firebaseConfig = {
