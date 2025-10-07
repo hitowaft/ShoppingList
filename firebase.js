@@ -24,14 +24,20 @@ import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/
 // Authの機能をインポート
 import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyD3sGjRILvQQmXBCXuaDW2Lv1b_3w46Ku8",
-    authDomain: "my-shopping-list-a22e0.firebaseapp.com",
-    projectId: "my-shopping-list-a22e0",
-    storageBucket: "my-shopping-list-a22e0.firebasestorage.app",
-    messagingSenderId: "255447189589",
-    appId: "1:255447189589:web:168750e727ea270805ecdc"
-  };
+const firebaseApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+
+if (!firebaseApiKey) {
+  console.warn("VITE_FIREBASE_API_KEY is not set. Firebase SDK initialisation may fail.");
+}
+
+const firebaseConfig = {
+  apiKey: firebaseApiKey,
+  authDomain: "my-shopping-list-a22e0.firebaseapp.com",
+  projectId: "my-shopping-list-a22e0",
+  storageBucket: "my-shopping-list-a22e0.firebasestorage.app",
+  messagingSenderId: "255447189589",
+  appId: "1:255447189589:web:168750e727ea270805ecdc"
+};
 
 // --- 初期化処理 ---
 const app = initializeApp(firebaseConfig);
