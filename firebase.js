@@ -20,6 +20,7 @@ import {
   Timestamp,
   arrayUnion
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 // Authの機能をインポート
 import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
@@ -37,6 +38,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 const googleAuthProvider = new GoogleAuthProvider();
+const functions = getFunctions(app);
 
 // --- このファイルから他のファイルへ提供する機能 ---
 // db と、よく使うFirestoreの関数をまとめてエクスポートする
@@ -58,6 +60,8 @@ export {
   serverTimestamp,
   Timestamp,
   arrayUnion,
+  functions,
+  httpsCallable,
   auth,
   onAuthStateChanged,
   signInWithPopup,
