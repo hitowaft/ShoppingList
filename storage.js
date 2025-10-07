@@ -1,15 +1,19 @@
 import { db, doc, updateDoc, deleteDoc, collection, query, where, getDocs, writeBatch } from "./firebase.js";
 
+const listItemsCollection = (listId) => collection(db, "lists", listId, "items");
+
 /**
  * アイテムの購入済み状態（completed）を更新する関数
  * @param {string} id - 更新するアイテムのドキュメントID
  * @param {boolean} currentCompleted - 現在の購入済み状態
+ * @param {string} listId - 操作対象のリストID
  */
-export async function updateItemStatus(id, currentCompleted) {
+export async function updateItemStatus(id, currentCompleted, listId) {
+  if (!listId) return;
   try {
     const newCompleted = !currentCompleted;
 
-    const itemRef = doc(db, "shopping-list", id);
+    const itemRef = doc(listItemsCollection(listId), id);
 
     await updateDoc(itemRef, {
       completed: newCompleted
@@ -24,11 +28,13 @@ export async function updateItemStatus(id, currentCompleted) {
 /**
  * アイテムをFirestoreから削除する関数
  * @param {string} id - 削除するアイテムのドキュメントID
+ * @param {string} listId - 操作対象のリストID
  */
-export async function deleteDbItem(id) {
+export async function deleteDbItem(id, listId) {
+  if (!listId) return;
   try {
     // --- ここからチャレンジ！ ---
-    const itemRef = doc(db, "shopping-list", id);
+    const itemRef = doc(listItemsCollection(listId), id);
 
     await deleteDoc(itemRef);
 
@@ -41,12 +47,14 @@ export async function deleteDbItem(id) {
 
 /**
  * Firestoreから完了済みのアイテムをすべて削除する関数
+ * @param {string} listId - 操作対象のリストID
  */
-export async function clearCompletedDbItems() {
+export async function clearCompletedDbItems(listId) {
+  if (!listId) return;
   try {
     // 1. 検索条件を作る
     // 'shopping-list'コレクションの中から、'completed'フィールドが true のものを探す、という条件
-    const q = query(collection(db, "shopping-list"), where("completed", "==", true));
+    const q = query(listItemsCollection(listId), where("completed", "==", true));
 
     // 2. 条件に合うドキュメントをすべて取得する
     const querySnapshot = await getDocs(q);
@@ -69,11 +77,13 @@ export async function clearCompletedDbItems() {
  * アイテムのテキスト(name)をFirestore上で更新する関数
  * @param {string} id - 更新するアイテムのドキュメントID
  * @param {string} newText - 新しいテキスト
+ * @param {string} listId - 操作対象のリストID
  */
-export async function updateDbItemText(id, newText) {
+export async function updateDbItemText(id, newText, listId) {
+  if (!listId) return;
   try {
     // 1. 更新対象のドキュメントへの参照を作成する
-    const itemRef = doc(db, "shopping-list", id);
+    const itemRef = doc(listItemsCollection(listId), id);
 
     // 2. updateDocを使って、nameフィールドをnewTextの値で更新する
     await updateDoc(itemRef, {
@@ -86,3 +96,4 @@ export async function updateDbItemText(id, newText) {
     console.error("テキストの更新中にエラーが発生しました:", error);
   }
 }
+

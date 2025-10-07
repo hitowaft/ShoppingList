@@ -1,7 +1,8 @@
-import { db, collection, addDoc, onSnapshot, query, orderBy } from "./firebase.js";
-import { state, additem, deleteitem, toggleitem, clearCompleteditems, setSearchKeyword, toggleEditMode, updateitemText } from './state.js';
+import { db, collection, addDoc, onSnapshot, query, orderBy, where, getDocs, serverTimestamp, doc, setDoc, Timestamp, getDoc } from "./firebase.js";
+import { state, setSearchKeyword, toggleEditMode } from './state.js';
 import { updateItemStatus, deleteDbItem, clearCompletedDbItems, updateDbItemText } from "./storage.js";
 import { initUI, render } from "./ui.js";
+import { signOutUser, observeAuthState } from "./auth.js";
 
 // --- DOM要素の取得 ---
 const inputElement = document.getElementById('itemInput');
@@ -13,9 +14,155 @@ const clearCompletedButton = document.getElementById('clearCompletedButton');
 const editModeButton = document.getElementById('editModeButton');
 const toggleSearchButton = document.getElementById('toggleSearchButton');
 const searchOptionsSection = document.getElementById('searchOptions');
+const signOutButton = document.getElementById('signOutButton');
+const userStatusLabel = document.getElementById('userStatus');
+const shareControlsSection = document.getElementById('shareControlsSection');
+const createInviteButton = document.getElementById('createInviteButton');
+const inviteLinkContainer = document.getElementById('inviteLinkContainer');
+const inviteLinkField = document.getElementById('inviteLinkField');
+const copyInviteLinkButton = document.getElementById('copyInviteLink');
+const inviteStatusLabel = document.getElementById('inviteStatus');
 
 let isSearchVisible = false;
 let unsubscribeFromItems = null;
+
+const getListItemsCollection = (listId) => collection(db, "lists", listId, "items");
+
+const listsCollection = collection(db, "lists");
+
+const ACTIVE_LIST_STORAGE_KEY = 'shopping-list.activeListId';
+
+const setUserStatusMessage = (message) => {
+  if (userStatusLabel) {
+    userStatusLabel.textContent = message;
+  }
+};
+
+const defaultInviteStatusMessage = 'リンクはここに表示されます。';
+let inviteStatusResetTimer = null;
+
+const setInviteStatusMessage = (message) => {
+  if (inviteStatusLabel) {
+    inviteStatusLabel.textContent = message;
+  }
+};
+
+const updateShareControlsVisibility = () => {
+  if (shareControlsSection) {
+    const isEditing = Boolean(state.isEditing);
+    shareControlsSection.classList.toggle('is-hidden', !isEditing);
+    if (createInviteButton) {
+      createInviteButton.disabled = !isEditing;
+    }
+  }
+};
+
+const resetInviteUI = () => {
+  if (createInviteButton) {
+    createInviteButton.disabled = true;
+  }
+  if (inviteLinkContainer) {
+    inviteLinkContainer.classList.add('is-hidden');
+  }
+  if (inviteLinkField) {
+    inviteLinkField.value = '';
+  }
+  if (inviteStatusResetTimer) {
+    clearTimeout(inviteStatusResetTimer);
+    inviteStatusResetTimer = null;
+  }
+  setInviteStatusMessage(defaultInviteStatusMessage);
+};
+
+resetInviteUI();
+
+const INVITE_VALID_DAYS = 7;
+
+const generateInviteCode = () => {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+  }
+  return Math.random().toString(36).slice(-12);
+};
+
+const buildInviteUrl = (code) => {
+  const baseUrl = new URL('login.html', window.location.href);
+  baseUrl.searchParams.set('invite', code);
+  return baseUrl.toString();
+};
+
+const scheduleInviteStatusReset = () => {
+  if (inviteStatusResetTimer) {
+    clearTimeout(inviteStatusResetTimer);
+  }
+  inviteStatusResetTimer = window.setTimeout(() => {
+    setInviteStatusMessage(`リンクをコピーして共有してください（${INVITE_VALID_DAYS}日間有効）`);
+  }, 3000);
+};
+
+const handleCopyInviteLink = async () => {
+  const link = inviteLinkField?.value;
+  if (!link) return;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(link);
+    } else {
+      inviteLinkField?.select();
+      document.execCommand('copy');
+    }
+    setInviteStatusMessage('リンクをコピーしました！');
+    scheduleInviteStatusReset();
+  } catch (error) {
+    console.error('リンクのコピーに失敗しました:', error);
+    alert('コピーに失敗しました。表示されているリンクを手動でコピーしてください。');
+  }
+};
+
+const handleCreateInviteLink = async () => {
+  if (!state.user || !state.activeListId) {
+    alert('共有リストが準備できていません。ページを再読み込みしてください。');
+    return;
+  }
+
+  if (createInviteButton) {
+    createInviteButton.disabled = true;
+  }
+  setInviteStatusMessage('共有リンクを作成しています…');
+
+  try {
+    const code = generateInviteCode();
+    const inviteRef = doc(collection(db, 'invites'), code);
+    const expiresAt = Timestamp.fromDate(new Date(Date.now() + INVITE_VALID_DAYS * 24 * 60 * 60 * 1000));
+
+    await setDoc(inviteRef, {
+      listId: state.activeListId,
+      createdBy: state.user.uid,
+      createdAt: serverTimestamp(),
+      expiresAt,
+      status: 'active'
+    });
+
+    const inviteUrl = buildInviteUrl(code);
+
+    if (inviteLinkField) {
+      inviteLinkField.value = inviteUrl;
+    }
+    if (inviteLinkContainer) {
+      inviteLinkContainer.classList.remove('is-hidden');
+    }
+
+    setInviteStatusMessage(`リンクをコピーして共有してください（${INVITE_VALID_DAYS}日間有効）`);
+  } catch (error) {
+    console.error('共有リンクの作成に失敗しました:', error);
+    alert('共有リンクの作成に失敗しました。時間をおいて再度お試しください。');
+    resetInviteUI();
+  } finally {
+    if (createInviteButton) {
+      createInviteButton.disabled = false;
+    }
+  }
+};
 
 function updateSearchVisibility(visible, { focus = false } = {}) {
   if (!toggleSearchButton || !searchOptionsSection) return;
@@ -38,10 +185,14 @@ const handleStateUpdate = () => {
   if (state.searchKeyword && !isSearchVisible) {
     updateSearchVisibility(true);
   }
+
+  updateShareControlsVisibility();
 };
 
-function startItemsSubscription() {
-  const itemsQuery = query(collection(db, "shopping-list"), orderBy("createdAt", "desc"));
+function startItemsSubscription(listId) {
+  if (!listId) return;
+
+  const itemsQuery = query(getListItemsCollection(listId), orderBy("createdAt", "desc"));
 
   unsubscribeFromItems = onSnapshot(
     itemsQuery,
@@ -73,16 +224,125 @@ function stopItemsSubscription() {
   }
 }
 
+function resetListState() {
+  state.activeListId = null;
+  state.activeListName = '';
+  state.items = [];
+  sessionStorage.removeItem(ACTIVE_LIST_STORAGE_KEY);
+}
+
+async function ensureActiveList(user) {
+  const userUid = user.uid;
+  const storedListId = sessionStorage.getItem(ACTIVE_LIST_STORAGE_KEY);
+
+  if (storedListId) {
+    try {
+      const storedListSnapshot = await getDoc(doc(db, 'lists', storedListId));
+      const storedListData = storedListSnapshot.data();
+
+      if (storedListSnapshot.exists() && Array.isArray(storedListData?.members) && storedListData.members.includes(userUid)) {
+        state.activeListId = storedListSnapshot.id;
+        state.activeListName = storedListData.name ?? '共有買い物リスト';
+        sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, storedListSnapshot.id);
+        return storedListSnapshot.id;
+      }
+    } catch (error) {
+      console.warn('保存済みリストの読み込みに失敗しました:', error);
+    }
+
+    sessionStorage.removeItem(ACTIVE_LIST_STORAGE_KEY);
+  }
+
+  const existingListsSnapshot = await getDocs(query(listsCollection, where('members', 'array-contains', userUid)));
+
+  if (!existingListsSnapshot.empty) {
+    const firstList = existingListsSnapshot.docs[0];
+    state.activeListId = firstList.id;
+    state.activeListName = firstList.data().name ?? '共有買い物リスト';
+    sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, firstList.id);
+    return firstList.id;
+  }
+
+  const listName = user.displayName ? `${user.displayName}の買い物リスト` : '共有買い物リスト';
+
+  const newListRef = await addDoc(listsCollection, {
+    name: listName,
+    ownerUid: userUid,
+    members: [userUid],
+    createdAt: serverTimestamp()
+  });
+
+  state.activeListId = newListRef.id;
+  state.activeListName = listName;
+  sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, newListRef.id);
+
+  return newListRef.id;
+}
+
+async function handleSignedIn(user) {
+  state.user = {
+    uid: user.uid,
+    displayName: user.displayName,
+    email: user.email,
+  };
+
+  setUserStatusMessage(`${user.displayName ?? 'ユーザー'}でログイン中（リスト読み込み中…）`);
+  resetInviteUI();
+
+  try {
+    const listId = await ensureActiveList(user);
+    stopItemsSubscription();
+    state.items = [];
+    handleStateUpdate();
+    startItemsSubscription(listId);
+    setUserStatusMessage(`${user.displayName ?? 'ユーザー'}でログイン中`);
+    if (createInviteButton) {
+      createInviteButton.disabled = false;
+    }
+    setInviteStatusMessage('共有リンクを発行して、家族と共有しましょう。');
+  } catch (error) {
+    console.error('リストの初期化に失敗しました:', error);
+    alert('買い物リストを読み込めませんでした。ページを再読み込みして再試行してください。');
+  }
+}
+
+function handleSignedOut() {
+  state.isEditing = false;
+  state.user = null;
+  stopItemsSubscription();
+  resetInviteUI();
+  resetListState();
+  if (searchInput) {
+    searchInput.value = '';
+  }
+  setSearchKeyword('');
+  if (isSearchVisible) {
+    updateSearchVisibility(false);
+  }
+  handleStateUpdate();
+  setUserStatusMessage('ログインが必要です');
+  window.location.replace('login.html');
+}
+
 // --- イベントハンドラ関数 ---
 
 const handleAddItem = async () => {
+  if (!state.user) {
+    alert('買い物リストを操作するにはログインが必要です。');
+    return;
+  }
+  const listId = state.activeListId;
+  if (!listId) {
+    alert('共有リストが見つかりませんでした。ページを再読み込みしてください。');
+    return;
+  }
   const itemName = inputElement.value.trim();
   if (itemName) {
     try {
-      const docRef = await addDoc(collection(db, "shopping-list"), {
+      const docRef = await addDoc(getListItemsCollection(listId), {
         name: itemName,
-        completed: false, // 未完了の状態
-        createdAt: new Date(), // 作成日時
+        completed: false,
+        createdAt: serverTimestamp(),
       });
       console.log("Firestoreに保存成功！ ID: ", docRef.id);
 
@@ -96,8 +356,9 @@ const handleAddItem = async () => {
 };
 
 const handleDeleteItem = async (itemId) => {
+  if (!state.user || !state.activeListId) return;
   try {
-    await deleteDbItem(itemId);
+    await deleteDbItem(itemId, state.activeListId);
 
   } catch (error) {
     console.error("アイテムの削除に失敗しました:", error);
@@ -108,11 +369,12 @@ const handleDeleteItem = async (itemId) => {
 };
 
 const handleToggleItem = async (itemId) => {
+  if (!state.user || !state.activeListId) return;
   const itemToUpdate = state.items.find(item => item.id === itemId);
   if (!itemToUpdate) return;
 
   try {
-    await updateItemStatus(itemId, itemToUpdate.completed);
+    await updateItemStatus(itemId, itemToUpdate.completed, state.activeListId);
 
   } catch (error) {
     console.error("アイテムの完了操作に失敗しました:", error);
@@ -124,12 +386,14 @@ const handleToggleItem = async (itemId) => {
 };
 
 const handleClearCompleted = () => {
-  clearCompletedDbItems();
+  if (!state.user || !state.activeListId) return;
+  clearCompletedDbItems(state.activeListId);
 };
 
 const handleUpdateItemText = async (itemId, newText) => {
+  if (!state.user || !state.activeListId) return;
   try {
-    await updateDbItemText(itemId, newText);
+    await updateDbItemText(itemId, newText, state.activeListId);
 
   } catch (error) {
     console.error("アイテムの更新に失敗しました:", error);
@@ -176,10 +440,33 @@ toggleSearchButton?.addEventListener('click', () => {
 
 clearCompletedButton.addEventListener('click', handleClearCompleted);
 
+createInviteButton?.addEventListener('click', handleCreateInviteLink);
+copyInviteLinkButton?.addEventListener('click', handleCopyInviteLink);
+
 editModeButton.addEventListener('click', () => {
   toggleEditMode();
   handleStateUpdate();
 })
 
-// --- アプリケーションの開始 ---
-startItemsSubscription();
+signOutButton?.addEventListener('click', async () => {
+  try {
+    await signOutUser();
+  } catch (error) {
+    console.error('ログアウトに失敗しました:', error);
+    alert('ログアウトに失敗しました。時間をおいて再度お試しください。');
+  }
+});
+
+observeAuthState(async (user) => {
+  const isSignedIn = Boolean(user);
+
+  if (signOutButton) {
+    signOutButton.classList.toggle('is-hidden', !isSignedIn);
+  }
+
+  if (isSignedIn && user) {
+    await handleSignedIn(user);
+  } else {
+    handleSignedOut();
+  }
+});

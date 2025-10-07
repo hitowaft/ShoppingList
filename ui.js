@@ -83,9 +83,9 @@ export function render(state) {
   listElement.innerHTML = '';
 
   if (state.isEditing) {
-    editModeButtonElement.textContent = '編集完了'
+    editModeButtonElement.textContent = '設定完了'
   } else {
-    editModeButtonElement.textContent = '編集'
+    editModeButtonElement.textContent = '編集・設定'
   }
 
   let itemsToRender;

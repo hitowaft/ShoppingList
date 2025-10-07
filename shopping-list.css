@@ -46,6 +46,78 @@ body {
   gap: 16px;
 }
 
+.app-header h1 {
+  writing-mode: horizontal-tb;
+  white-space: nowrap;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.share-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.invite-link {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #f9fafb;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.invite-status {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.invite-link__controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.invite-link__controls input {
+  flex: 1;
+  background-color: #fff;
+}
+
+.invite-link__controls button {
+  flex-shrink: 0;
+}
+
+.auth-app {
+  gap: 32px;
+}
+
+.auth-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: stretch;
+  text-align: center;
+}
+
+.auth-panel button {
+  width: 100%;
+}
+
+.auth-message {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 h1 {
   margin: 0;
   font-size: 1.8rem;
@@ -58,6 +130,15 @@ h1 {
 
 .app-header button {
   flex-shrink: 0;
+}
+
+.auth-status {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.is-hidden {
+  display: none !important;
 }
 
 .input-group,
@@ -210,5 +291,13 @@ button.secondary:active {
 
   .actions {
     flex-direction: column;
+  }
+
+  .item-list {
+    flex-direction: column;
+  }
+
+  .item-list li {
+    flex: 1 1 100%;
   }
 }

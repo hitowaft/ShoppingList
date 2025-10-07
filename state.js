@@ -1,7 +1,10 @@
 export const state = {
   items: [],
   searchKeyword: '',
-  isEditing: false
+  isEditing: false,
+  user: null,
+  activeListId: null,
+  activeListName: ''
 };
 
 export function additem (itemText, id) {
