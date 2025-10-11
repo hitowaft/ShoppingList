@@ -1,4 +1,4 @@
-import { db, collection, addDoc, onSnapshot, query, orderBy, where, getDocs, serverTimestamp, doc, setDoc, Timestamp, getDoc } from "./firebase.js";
+import { db, collection, addDoc, onSnapshot, query, orderBy, where, getDocs, serverTimestamp, doc, setDoc, Timestamp, getDoc, functions, httpsCallable } from "./firebase.js";
 import { state, setSearchKeyword, toggleEditMode } from './state.js';
 import { updateItemStatus, deleteDbItem, clearCompletedDbItems, updateDbItemText } from "./storage.js";
 import { initUI, render } from "./ui.js";
@@ -22,6 +22,12 @@ const inviteLinkContainer = document.getElementById('inviteLinkContainer');
 const inviteLinkField = document.getElementById('inviteLinkField');
 const copyInviteLinkButton = document.getElementById('copyInviteLink');
 const inviteStatusLabel = document.getElementById('inviteStatus');
+const alexaLinkSection = document.getElementById('alexaLinkSection');
+const generateAlexaCodeButton = document.getElementById('generateAlexaCodeButton');
+const alexaLinkCodeContainer = document.getElementById('alexaLinkCodeContainer');
+const alexaLinkCodeField = document.getElementById('alexaLinkCodeField');
+const copyAlexaLinkCodeButton = document.getElementById('copyAlexaLinkCode');
+const alexaLinkStatusLabel = document.getElementById('alexaLinkStatus');
 
 let isSearchVisible = false;
 let unsubscribeFromItems = null;
@@ -47,12 +53,29 @@ const setInviteStatusMessage = (message) => {
   }
 };
 
+const defaultAlexaStatusMessage = 'Alexaアプリで入力するコードがここに表示されます。';
+let alexaStatusResetTimer = null;
+let alexaTtlMessage = defaultAlexaStatusMessage;
+
+const setAlexaLinkStatusMessage = (message) => {
+  if (alexaLinkStatusLabel) {
+    alexaLinkStatusLabel.textContent = message;
+  }
+};
+
 const updateShareControlsVisibility = () => {
   if (shareControlsSection) {
     const isEditing = Boolean(state.isEditing);
     shareControlsSection.classList.toggle('is-hidden', !isEditing);
     if (createInviteButton) {
       createInviteButton.disabled = !isEditing;
+    }
+  }
+  if (alexaLinkSection) {
+    const isEditing = Boolean(state.isEditing);
+    alexaLinkSection.classList.toggle('is-hidden', !isEditing);
+    if (generateAlexaCodeButton) {
+      generateAlexaCodeButton.disabled = !isEditing;
     }
   }
 };
@@ -75,6 +98,38 @@ const resetInviteUI = () => {
 };
 
 resetInviteUI();
+
+const resetAlexaLinkUI = () => {
+  if (generateAlexaCodeButton) {
+    generateAlexaCodeButton.disabled = true;
+  }
+  if (alexaLinkCodeContainer) {
+    alexaLinkCodeContainer.classList.add('is-hidden');
+  }
+  if (alexaLinkCodeField) {
+    alexaLinkCodeField.value = '';
+  }
+  if (alexaStatusResetTimer) {
+    clearTimeout(alexaStatusResetTimer);
+    alexaStatusResetTimer = null;
+  }
+  alexaTtlMessage = defaultAlexaStatusMessage;
+  setAlexaLinkStatusMessage(defaultAlexaStatusMessage);
+};
+
+const scheduleAlexaStatusReset = () => {
+  if (alexaStatusResetTimer) {
+    clearTimeout(alexaStatusResetTimer);
+  }
+  alexaStatusResetTimer = window.setTimeout(() => {
+    setAlexaLinkStatusMessage(alexaTtlMessage);
+    alexaStatusResetTimer = null;
+  }, 3000);
+};
+
+resetAlexaLinkUI();
+
+const createAlexaLinkCodeCallable = httpsCallable(functions, 'createAlexaLinkCode');
 
 const INVITE_VALID_DAYS = 7;
 
@@ -161,6 +216,72 @@ const handleCreateInviteLink = async () => {
     if (createInviteButton) {
       createInviteButton.disabled = false;
     }
+  }
+};
+
+const handleGenerateAlexaLinkCode = async () => {
+  if (!state.user || !state.activeListId) {
+    alert('Alexa連携コードを発行するにはログインしてリストを読み込む必要があります。');
+    return;
+  }
+
+  if (generateAlexaCodeButton) {
+    generateAlexaCodeButton.disabled = true;
+  }
+  setAlexaLinkStatusMessage('Alexa連携コードを発行しています…');
+
+  try {
+    const { data } = await createAlexaLinkCodeCallable({ listId: state.activeListId });
+    const { code, ttlMinutes } = data ?? {};
+
+    if (!code) {
+      throw new Error('リンクコードが取得できませんでした。');
+    }
+
+    const displayTtl = typeof ttlMinutes === 'number' ? ttlMinutes : null;
+    alexaTtlMessage = displayTtl
+      ? `Alexaアプリでコードを入力してください（${displayTtl}分間有効）`
+      : 'Alexaアプリでコードを入力してください。';
+
+    if (alexaLinkCodeField) {
+      alexaLinkCodeField.value = code;
+      alexaLinkCodeField.focus();
+      alexaLinkCodeField.select?.();
+    }
+    if (alexaLinkCodeContainer) {
+      alexaLinkCodeContainer.classList.remove('is-hidden');
+    }
+
+    setAlexaLinkStatusMessage(alexaTtlMessage);
+  } catch (error) {
+    console.error('Alexaリンクコードの生成に失敗しました:', error);
+    alert('Alexa連携コードの発行に失敗しました。時間をおいて再度お試しください。');
+    resetAlexaLinkUI();
+  } finally {
+    if (generateAlexaCodeButton) {
+      generateAlexaCodeButton.disabled = !state.isEditing;
+    }
+  }
+};
+
+const handleCopyAlexaLinkCode = async () => {
+  const linkCode = alexaLinkCodeField?.value?.trim();
+  if (!linkCode) {
+    return;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(linkCode);
+    } else {
+      alexaLinkCodeField?.select();
+      document.execCommand('copy');
+    }
+    setAlexaLinkStatusMessage('コードをコピーしました！');
+    scheduleAlexaStatusReset();
+  } catch (error) {
+    console.error('Alexaリンクコードのコピーに失敗しました:', error);
+    alert('コピーに失敗しました。表示されているコードを手動でAlexaアプリに入力してください。');
   }
 };
 
@@ -288,6 +409,7 @@ async function handleSignedIn(user) {
 
   setUserStatusMessage(`${user.displayName ?? 'ユーザー'}でログイン中（リスト読み込み中…）`);
   resetInviteUI();
+  resetAlexaLinkUI();
 
   try {
     const listId = await ensureActiveList(user);
@@ -300,6 +422,7 @@ async function handleSignedIn(user) {
       createInviteButton.disabled = false;
     }
     setInviteStatusMessage('共有リンクを発行して、家族と共有しましょう。');
+    setAlexaLinkStatusMessage('Alexaアプリで入力するコードがここに表示されます。');
   } catch (error) {
     console.error('リストの初期化に失敗しました:', error);
     alert('買い物リストを読み込めませんでした。ページを再読み込みして再試行してください。');
@@ -311,6 +434,7 @@ function handleSignedOut() {
   state.user = null;
   stopItemsSubscription();
   resetInviteUI();
+  resetAlexaLinkUI();
   resetListState();
   if (searchInput) {
     searchInput.value = '';
@@ -442,6 +566,8 @@ clearCompletedButton.addEventListener('click', handleClearCompleted);
 
 createInviteButton?.addEventListener('click', handleCreateInviteLink);
 copyInviteLinkButton?.addEventListener('click', handleCopyInviteLink);
+generateAlexaCodeButton?.addEventListener('click', handleGenerateAlexaLinkCode);
+copyAlexaLinkCodeButton?.addEventListener('click', handleCopyAlexaLinkCode);
 
 editModeButton.addEventListener('click', () => {
   toggleEditMode();

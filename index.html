@@ -26,6 +26,16 @@
         </div>
       </div>
     </section>
+    <section id="alexaLinkSection" class="share-controls is-hidden">
+      <button id="generateAlexaCodeButton" class="secondary">Alexa連携コードを発行</button>
+      <div id="alexaLinkCodeContainer" class="invite-link is-hidden">
+        <p id="alexaLinkStatus" class="invite-status" aria-live="polite">Alexaアプリで入力するコードがここに表示されます。</p>
+        <div class="invite-link__controls">
+          <input id="alexaLinkCodeField" type="text" readonly value="">
+          <button id="copyAlexaLinkCode" class="secondary">コピー</button>
+        </div>
+      </div>
+    </section>
     <section class="input-group">
       <label class="sr-only" for="itemInput">買うものを入力</label>
       <input type="text" id="itemInput" placeholder="買うものを入力…">
