@@ -1,8 +1,8 @@
 export const state = {
   items: [],
-  searchKeyword: '',
   isEditing: false,
   user: null,
+  userId: null,
   activeListId: null,
   activeListName: ''
 };
@@ -25,10 +25,6 @@ export function toggleitem (itemId) {
 
 export function clearCompleteditems() {
   state.items = state.items.filter(item => item.completed === false);  
-}
-
-export function setSearchKeyword(keyword) {
-  state.searchKeyword = keyword;
 }
 
 export function toggleEditMode() {

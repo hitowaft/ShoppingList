@@ -22,7 +22,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 // Authの機能をインポート
-import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseApiKey = (typeof import.meta !== "undefined" && import.meta?.env?.VITE_FIREBASE_API_KEY)
   || (typeof window !== "undefined" && window.__ENV?.VITE_FIREBASE_API_KEY);
@@ -73,5 +73,6 @@ export {
   onAuthStateChanged,
   signInWithPopup,
   googleAuthProvider,
-  signOut
+  signOut,
+  signInAnonymously
 };

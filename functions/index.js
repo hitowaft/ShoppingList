@@ -668,14 +668,14 @@ alexaAuthApp.get("/", (req, res) => {
 exports.alexaAuthService = onRequest((req, res) => alexaAuthApp(req, res));
 
 exports.acceptInvite = onCall({cors: true}, async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) {
-    throw new HttpsError("unauthenticated", "ログインした状態でアクセスしてください。");
-  }
-
   const inviteCode = request.data?.inviteCode;
   if (!inviteCode || typeof inviteCode !== "string") {
     throw new HttpsError("invalid-argument", "有効な招待コードを指定してください。");
+  }
+
+  const userId = request.data?.userId;
+  if (!userId || typeof userId !== "string") {
+    throw new HttpsError("invalid-argument", "有効なユーザーIDを指定してください。");
   }
 
   const inviteRef = db.collection("invites").doc(inviteCode);
@@ -715,9 +715,9 @@ exports.acceptInvite = onCall({cors: true}, async (request) => {
     const listData = listSnap.data();
     const members = Array.isArray(listData.members) ? listData.members : [];
 
-    const alreadyMember = members.includes(uid);
+    const alreadyMember = members.includes(userId);
     if (!alreadyMember) {
-      members.push(uid);
+      members.push(userId);
       transaction.update(listRef, {
         members,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -727,13 +727,13 @@ exports.acceptInvite = onCall({cors: true}, async (request) => {
     transaction.update(inviteRef, {
       status: "used",
       usedAt: admin.firestore.FieldValue.serverTimestamp(),
-      usedBy: uid,
+      usedBy: userId,
     });
 
     return {listId, alreadyMember};
   });
 
-  logger.info("Invite accepted", {inviteCode, uid, listId: result.listId});
+  logger.info("Invite accepted", {inviteCode, userId, listId: result.listId});
 
   return {
     listId: result.listId,
@@ -742,14 +742,14 @@ exports.acceptInvite = onCall({cors: true}, async (request) => {
 });
 
 exports.createAlexaLinkCode = onCall({cors: true}, async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) {
-    throw new HttpsError("unauthenticated", "ログインした状態でアクセスしてください。");
-  }
-
   const listId = request.data?.listId;
   if (!listId || typeof listId !== "string") {
     throw new HttpsError("invalid-argument", "有効なリストIDを指定してください。");
+  }
+
+  const userId = request.data?.userId;
+  if (!userId || typeof userId !== "string") {
+    throw new HttpsError("invalid-argument", "有効なユーザーIDを指定してください。");
   }
 
   const listRef = db.collection("lists").doc(listId);
@@ -759,7 +759,7 @@ exports.createAlexaLinkCode = onCall({cors: true}, async (request) => {
   }
   const listData = listSnap.data();
   const members = Array.isArray(listData.members) ? listData.members : [];
-  if (!members.includes(uid)) {
+  if (!members.includes(userId)) {
     throw new HttpsError("permission-denied", "このリストに対する権限がありません。");
   }
 
@@ -773,7 +773,7 @@ exports.createAlexaLinkCode = onCall({cors: true}, async (request) => {
     const codeRef = linkCodeCollection.doc(code);
     try {
       await codeRef.create({
-        uid,
+        uid: userId,
         listId,
         status: "pending",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),

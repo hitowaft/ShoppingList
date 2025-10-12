@@ -1,19 +1,16 @@
 import { db, collection, addDoc, onSnapshot, query, orderBy, where, getDocs, serverTimestamp, doc, setDoc, Timestamp, getDoc, functions, httpsCallable } from "./firebase.js";
-import { state, setSearchKeyword, toggleEditMode } from './state.js';
+import { state, toggleEditMode } from './state.js';
 import { updateItemStatus, deleteDbItem, clearCompletedDbItems, updateDbItemText } from "./storage.js";
 import { initUI, render } from "./ui.js";
 import { signOutUser, observeAuthState } from "./auth.js";
+import { acceptInvite as acceptInviteViaApi } from "./api.js";
 
 // --- DOM要素の取得 ---
 const inputElement = document.getElementById('itemInput');
 const addButton = document.getElementById('addButton');
 const listElement = document.getElementById('itemList');
-const searchInput = document.getElementById('searchInput');
-const clearButton = document.getElementById('clearButton');
 const clearCompletedButton = document.getElementById('clearCompletedButton');
 const editModeButton = document.getElementById('editModeButton');
-const toggleSearchButton = document.getElementById('toggleSearchButton');
-const searchOptionsSection = document.getElementById('searchOptions');
 const signOutButton = document.getElementById('signOutButton');
 const userStatusLabel = document.getElementById('userStatus');
 const shareControlsSection = document.getElementById('shareControlsSection');
@@ -29,7 +26,47 @@ const alexaLinkCodeField = document.getElementById('alexaLinkCodeField');
 const copyAlexaLinkCodeButton = document.getElementById('copyAlexaLinkCode');
 const alexaLinkStatusLabel = document.getElementById('alexaLinkStatus');
 
-let isSearchVisible = false;
+const urlParams = new URLSearchParams(window.location.search);
+let pendingInviteCode = (urlParams.get('invite') ?? '').trim();
+
+const clearInviteFromUrl = () => {
+  if (!pendingInviteCode) return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('invite');
+  window.history.replaceState({}, document.title, url.toString());
+};
+
+const applyListStatus = (listId, listData) => {
+  const originalName = listData?.name ?? '買い物リスト';
+  const normalizedName = /^共有ユーザー\(.+\)のリスト$/.test(originalName)
+    ? 'マイリスト'
+    : originalName;
+  state.activeListId = listId;
+  state.activeListName = normalizedName;
+  const rawMembers = Array.isArray(listData?.members) ? listData.members : [];
+  const uniqueMembers = Array.from(new Set(rawMembers.filter((member) => typeof member === 'string' && member.length > 0)));
+  const memberCount = Math.max(uniqueMembers.length, 1);
+  const sharingDescription = memberCount <= 1 ? 'ひとりで利用中' : `${memberCount}人で共有中`;
+  setUserStatusMessage(`${normalizedName}（${sharingDescription}）`);
+};
+
+const refreshListStatus = async (listId) => {
+  if (!listId) {
+    return;
+  }
+  try {
+    const listSnapshot = await getDoc(doc(db, 'lists', listId));
+    if (!listSnapshot.exists()) {
+      setUserStatusMessage('リスト情報を取得できませんでした。');
+      return;
+    }
+    applyListStatus(listId, listSnapshot.data());
+  } catch (error) {
+    console.error('リスト情報の取得に失敗しました:', error);
+    setUserStatusMessage('リスト情報の取得に失敗しました。');
+  }
+};
+
 let unsubscribeFromItems = null;
 
 const getListItemsCollection = (listId) => collection(db, "lists", listId, "items");
@@ -141,7 +178,7 @@ const generateInviteCode = () => {
 };
 
 const buildInviteUrl = (code) => {
-  const baseUrl = new URL('login.html', window.location.href);
+  const baseUrl = new URL('index.html', window.location.href);
   baseUrl.searchParams.set('invite', code);
   return baseUrl.toString();
 };
@@ -175,7 +212,7 @@ const handleCopyInviteLink = async () => {
 };
 
 const handleCreateInviteLink = async () => {
-  if (!state.user || !state.activeListId) {
+  if (!state.userId || !state.activeListId) {
     alert('共有リストが準備できていません。ページを再読み込みしてください。');
     return;
   }
@@ -192,7 +229,7 @@ const handleCreateInviteLink = async () => {
 
     await setDoc(inviteRef, {
       listId: state.activeListId,
-      createdBy: state.user.uid,
+      createdBy: state.userId,
       createdAt: serverTimestamp(),
       expiresAt,
       status: 'active'
@@ -220,18 +257,24 @@ const handleCreateInviteLink = async () => {
 };
 
 const handleGenerateAlexaLinkCode = async () => {
-  if (!state.user || !state.activeListId) {
-    alert('Alexa連携コードを発行するにはログインしてリストを読み込む必要があります。');
+  if (!state.userId || !state.activeListId) {
+    alert('Alexa連携コードを発行するにはリストが読み込まれている必要があります。');
     return;
   }
 
   if (generateAlexaCodeButton) {
     generateAlexaCodeButton.disabled = true;
   }
+  if (alexaLinkCodeField) {
+    alexaLinkCodeField.value = '';
+  }
+  if (alexaLinkCodeContainer) {
+    alexaLinkCodeContainer.classList.add('is-hidden');
+  }
   setAlexaLinkStatusMessage('Alexa連携コードを発行しています…');
 
   try {
-    const { data } = await createAlexaLinkCodeCallable({ listId: state.activeListId });
+    const { data } = await createAlexaLinkCodeCallable({ listId: state.activeListId, userId: state.userId });
     const { code, ttlMinutes } = data ?? {};
 
     if (!code) {
@@ -285,28 +328,9 @@ const handleCopyAlexaLinkCode = async () => {
   }
 };
 
-function updateSearchVisibility(visible, { focus = false } = {}) {
-  if (!toggleSearchButton || !searchOptionsSection) return;
-
-  isSearchVisible = visible;
-  toggleSearchButton.setAttribute('aria-expanded', String(visible));
-  searchOptionsSection.setAttribute('aria-hidden', String(!visible));
-  toggleSearchButton.textContent = visible ? '検索を閉じる' : '検索オプション';
-  searchOptionsSection.classList.toggle('is-hidden', !visible);
-
-  if (visible && focus) {
-    searchInput?.focus();
-  }
-}
-
 // --- 状態が更新された後のお決まり処理をまとめた関数 ---
 const handleStateUpdate = () => {
   render(state);
-
-  if (state.searchKeyword && !isSearchVisible) {
-    updateSearchVisibility(true);
-  }
-
   updateShareControlsVisibility();
 };
 
@@ -354,6 +378,7 @@ function resetListState() {
 
 async function ensureActiveList(user) {
   const userUid = user.uid;
+  state.userId = userUid;
   const storedListId = sessionStorage.getItem(ACTIVE_LIST_STORAGE_KEY);
 
   if (storedListId) {
@@ -384,7 +409,7 @@ async function ensureActiveList(user) {
     return firstList.id;
   }
 
-  const listName = user.displayName ? `${user.displayName}の買い物リスト` : '共有買い物リスト';
+  const listName = 'マイリスト';
 
   const newListRef = await addDoc(listsCollection, {
     name: listName,
@@ -401,28 +426,60 @@ async function ensureActiveList(user) {
 }
 
 async function handleSignedIn(user) {
-  state.user = {
-    uid: user.uid,
-    displayName: user.displayName,
-    email: user.email,
-  };
+  state.user = { uid: user.uid };
+  state.userId = user.uid;
 
-  setUserStatusMessage(`${user.displayName ?? 'ユーザー'}でログイン中（リスト読み込み中…）`);
+  setUserStatusMessage('リストを読み込み中…');
   resetInviteUI();
   resetAlexaLinkUI();
 
   try {
-    const listId = await ensureActiveList(user);
+    let resolvedListId = null;
+
+    if (pendingInviteCode) {
+      try {
+        setInviteStatusMessage('招待コードを確認しています…');
+        const { listId: joinedListId } = await acceptInviteViaApi(pendingInviteCode, user.uid);
+        if (joinedListId) {
+          resolvedListId = joinedListId;
+          state.activeListId = joinedListId;
+          const joinedListSnapshot = await getDoc(doc(db, 'lists', joinedListId));
+          if (joinedListSnapshot.exists()) {
+            applyListStatus(joinedListId, joinedListSnapshot.data());
+          }
+          sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, joinedListId);
+          setInviteStatusMessage('招待が承認されました。');
+        } else {
+          setInviteStatusMessage('招待の処理が完了しました。');
+        }
+      } catch (error) {
+        console.error('招待の処理に失敗しました:', error);
+        alert(error?.message ?? '招待の処理に失敗しました。');
+        setInviteStatusMessage('招待の処理に失敗しました。');
+      } finally {
+        clearInviteFromUrl();
+        pendingInviteCode = '';
+      }
+    }
+
+    if (!resolvedListId) {
+      resolvedListId = await ensureActiveList(user);
+    }
+
     stopItemsSubscription();
     state.items = [];
     handleStateUpdate();
-    startItemsSubscription(listId);
-    setUserStatusMessage(`${user.displayName ?? 'ユーザー'}でログイン中`);
+    startItemsSubscription(resolvedListId);
+    await refreshListStatus(resolvedListId);
     if (createInviteButton) {
       createInviteButton.disabled = false;
     }
     setInviteStatusMessage('共有リンクを発行して、家族と共有しましょう。');
     setAlexaLinkStatusMessage('Alexaアプリで入力するコードがここに表示されます。');
+    if (signOutButton) {
+      signOutButton.classList.remove('is-hidden');
+      signOutButton.textContent = 'データをリセット';
+    }
   } catch (error) {
     console.error('リストの初期化に失敗しました:', error);
     alert('買い物リストを読み込めませんでした。ページを再読み込みして再試行してください。');
@@ -432,27 +489,20 @@ async function handleSignedIn(user) {
 function handleSignedOut() {
   state.isEditing = false;
   state.user = null;
+  state.userId = null;
   stopItemsSubscription();
   resetInviteUI();
   resetAlexaLinkUI();
   resetListState();
-  if (searchInput) {
-    searchInput.value = '';
-  }
-  setSearchKeyword('');
-  if (isSearchVisible) {
-    updateSearchVisibility(false);
-  }
   handleStateUpdate();
-  setUserStatusMessage('ログインが必要です');
-  window.location.replace('login.html');
+  setUserStatusMessage('リストが初期化されました。ページを再読み込みしてください。');
 }
 
 // --- イベントハンドラ関数 ---
 
 const handleAddItem = async () => {
-  if (!state.user) {
-    alert('買い物リストを操作するにはログインが必要です。');
+  if (!state.userId) {
+    alert('買い物リストを利用できません。ページを再読み込みしてください。');
     return;
   }
   const listId = state.activeListId;
@@ -480,7 +530,7 @@ const handleAddItem = async () => {
 };
 
 const handleDeleteItem = async (itemId) => {
-  if (!state.user || !state.activeListId) return;
+  if (!state.userId || !state.activeListId) return;
   try {
     await deleteDbItem(itemId, state.activeListId);
 
@@ -493,7 +543,7 @@ const handleDeleteItem = async (itemId) => {
 };
 
 const handleToggleItem = async (itemId) => {
-  if (!state.user || !state.activeListId) return;
+  if (!state.userId || !state.activeListId) return;
   const itemToUpdate = state.items.find(item => item.id === itemId);
   if (!itemToUpdate) return;
 
@@ -510,12 +560,12 @@ const handleToggleItem = async (itemId) => {
 };
 
 const handleClearCompleted = () => {
-  if (!state.user || !state.activeListId) return;
+  if (!state.userId || !state.activeListId) return;
   clearCompletedDbItems(state.activeListId);
 };
 
 const handleUpdateItemText = async (itemId, newText) => {
-  if (!state.user || !state.activeListId) return;
+  if (!state.userId || !state.activeListId) return;
   try {
     await updateDbItemText(itemId, newText, state.activeListId);
 
@@ -547,21 +597,6 @@ function enterKeyPress(event) {
   }
 }
 
-searchInput.addEventListener('input', (event) => {
-  setSearchKeyword(event.target.value);
-  handleStateUpdate();
-});
-
-clearButton.addEventListener('click', () => {
-  searchInput.value = '';
-  setSearchKeyword('');
-  handleStateUpdate();
-});
-
-toggleSearchButton?.addEventListener('click', () => {
-  updateSearchVisibility(!isSearchVisible, { focus: !isSearchVisible });
-});
-
 clearCompletedButton.addEventListener('click', handleClearCompleted);
 
 createInviteButton?.addEventListener('click', handleCreateInviteLink);
@@ -575,6 +610,10 @@ editModeButton.addEventListener('click', () => {
 })
 
 signOutButton?.addEventListener('click', async () => {
+  const confirmed = window.confirm('現在のリストと端末に保存された利用者IDをリセットします。よろしいですか？');
+  if (!confirmed) {
+    return;
+  }
   try {
     await signOutUser();
   } catch (error) {
@@ -584,13 +623,7 @@ signOutButton?.addEventListener('click', async () => {
 });
 
 observeAuthState(async (user) => {
-  const isSignedIn = Boolean(user);
-
-  if (signOutButton) {
-    signOutButton.classList.toggle('is-hidden', !isSignedIn);
-  }
-
-  if (isSignedIn && user) {
+  if (user) {
     await handleSignedIn(user);
   } else {
     handleSignedOut();

@@ -88,19 +88,7 @@ export function render(state) {
     editModeButtonElement.textContent = '編集・設定'
   }
 
-  let itemsToRender;
-
-  if (state.searchKeyword) {
-    const keyword = state.searchKeyword.toLowerCase();
-
-    itemsToRender = state.items.filter(item => {
-      return item.text.toLowerCase().includes(keyword);
-    });
-  } else {
-    itemsToRender = state.items;
-  }
-
-  itemsToRender.forEach(item => {
+  state.items.forEach(item => {
     const itemElement = createItemElement(
       item,
       onDeleteCallback,

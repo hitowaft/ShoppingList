@@ -12,11 +12,11 @@
       <h1>買い物リスト</h1>
       <div class="header-actions">
         <span id="userStatus" class="auth-status" aria-live="polite">読み込み中…</span>
-        <button id="signOutButton" class="secondary is-hidden">ログアウト</button>
         <button id="editModeButton" class="secondary" aria-live="polite">編集</button>
       </div>
     </header>
     <section id="shareControlsSection" class="share-controls is-hidden">
+      <button id="signOutButton" class="danger">データをリセット</button>
       <button id="createInviteButton" class="secondary">共有リンクを発行</button>
       <div id="inviteLinkContainer" class="invite-link is-hidden">
         <p id="inviteStatus" class="invite-status" aria-live="polite">リンクはここに表示されます。</p>
@@ -43,13 +43,7 @@
     </section>
     <ul id="itemList" class="item-list"></ul>
     <section class="actions">
-      <button id="toggleSearchButton" class="secondary" aria-expanded="false" aria-controls="searchOptions">検索オプション</button>
       <button id="clearCompletedButton" class="secondary">完了済みを削除</button>
-    </section>
-    <section id="searchOptions" class="filter-group is-hidden" aria-hidden="true">
-      <label class="sr-only" for="searchInput">項目を検索</label>
-      <input type="text" id="searchInput" placeholder="項目を検索">
-      <button id="clearButton" class="secondary">クリア</button>
     </section>
   </main>
 
