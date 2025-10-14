@@ -46,8 +46,8 @@ const applyListStatus = (listId, listData) => {
   const rawMembers = Array.isArray(listData?.members) ? listData.members : [];
   const uniqueMembers = Array.from(new Set(rawMembers.filter((member) => typeof member === 'string' && member.length > 0)));
   const memberCount = Math.max(uniqueMembers.length, 1);
-  const sharingDescription = memberCount <= 1 ? 'ひとりで利用中' : `${memberCount}人で共有中`;
-  setUserStatusMessage(`${normalizedName}（${sharingDescription}）`);
+  const sharingDescription = memberCount <= 1 ? '1つのデバイスで利用中' : `${memberCount}つのデバイスで共有中`;
+  setUserStatusMessage(sharingDescription);
 };
 
 const refreshListStatus = async (listId) => {

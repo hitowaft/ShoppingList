@@ -4,6 +4,7 @@
 
 const crypto = require("crypto");
 const {onCall, onRequest, HttpsError} = require("firebase-functions/v2/https");
+const {onSchedule} = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const express = require("express");
@@ -35,6 +36,232 @@ const requiredAuthParams = ["response_type", "client_id", "redirect_uri", "state
 const linkCodeCollection = db.collection("alexaLinkCodes");
 const authCodeCollection = db.collection("alexaAuthCodes");
 const refreshTokenCollection = db.collection("alexaRefreshTokens");
+
+const MINUTE_IN_MS = 60 * 1000;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const CLEANUP_GRACE_MINUTES = Math.max(0, Number(process.env.CLEANUP_GRACE_MINUTES || 5));
+const INVITE_RETENTION_DAYS = Math.max(0, Number(process.env.INVITE_RETENTION_DAYS || 30));
+const MAINTENANCE_TOKEN = process.env.MAINTENANCE_TOKEN || null;
+const INVITE_CLEANUP_BATCH_SIZE = 200;
+
+const toMillis = (firestoreTimestamp) => {
+  if (!firestoreTimestamp) {
+    return null;
+  }
+  if (typeof firestoreTimestamp.toMillis === "function") {
+    return firestoreTimestamp.toMillis();
+  }
+  if (typeof firestoreTimestamp.toDate === "function") {
+    const date = firestoreTimestamp.toDate();
+    return date instanceof Date ? date.getTime() : null;
+  }
+  if (firestoreTimestamp instanceof Date) {
+    return firestoreTimestamp.getTime();
+  }
+  return null;
+};
+
+const deleteExpiredDocuments = async ({collectionRef, timestampField, beforeTimestamp, batchSize = 200, logLabel}) => {
+  if (!beforeTimestamp) {
+    return 0;
+  }
+  let deleted = 0;
+  let hasMore = true;
+  while (hasMore) {
+    let query = collectionRef.orderBy(timestampField);
+    query = query.endBefore(beforeTimestamp);
+    const snapshot = await query.limit(batchSize).get();
+    if (snapshot.empty) {
+      hasMore = false;
+      break;
+    }
+    const batch = db.batch();
+    snapshot.docs.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+    await batch.commit();
+    deleted += snapshot.size;
+    hasMore = snapshot.size === batchSize;
+  }
+  if (deleted > 0 && logLabel) {
+    logger.info("Deleted expired documents", {collection: logLabel, count: deleted});
+  }
+  return deleted;
+};
+
+const cleanupInvites = async ({nowTimestamp, deleteBeforeTimestamp}) => {
+  const invitesRef = db.collection("invites");
+  const deleteBeforeMillis = deleteBeforeTimestamp ? deleteBeforeTimestamp.toMillis() : null;
+
+  let cursor = null;
+  let markedExpired = 0;
+  let deleted = 0;
+  let more = true;
+
+  while (more) {
+    let query = invitesRef.orderBy("expiresAt");
+    if (cursor) {
+      query = query.startAfter(cursor);
+    }
+    query = query.endBefore(nowTimestamp);
+    const snapshot = await query.limit(INVITE_CLEANUP_BATCH_SIZE).get();
+    if (snapshot.empty) {
+      more = false;
+      break;
+    }
+
+    const batch = db.batch();
+    let operations = 0;
+
+    snapshot.docs.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const status = typeof data.status === "string" ? data.status : "active";
+      const expiresAtMillis = toMillis(data.expiresAt);
+
+      if (deleteBeforeMillis !== null && (expiresAtMillis === null || expiresAtMillis < deleteBeforeMillis)) {
+        batch.delete(docSnap.ref);
+        deleted += 1;
+        operations += 1;
+        return;
+      }
+
+      if (status === "active") {
+        batch.update(docSnap.ref, {
+          status: "expired",
+          expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        markedExpired += 1;
+        operations += 1;
+      }
+    });
+
+    if (operations > 0) {
+      await batch.commit();
+    }
+
+    cursor = snapshot.docs[snapshot.docs.length - 1];
+    more = snapshot.size === INVITE_CLEANUP_BATCH_SIZE;
+  }
+
+  if (deleteBeforeTimestamp) {
+    let hasMore = true;
+    let deletionCursor = null;
+    while (hasMore) {
+      let query = invitesRef.orderBy("expiresAt");
+      if (deletionCursor) {
+        query = query.startAfter(deletionCursor);
+      }
+      query = query.endBefore(deleteBeforeTimestamp);
+      const snapshot = await query.limit(INVITE_CLEANUP_BATCH_SIZE).get();
+      if (snapshot.empty) {
+        hasMore = false;
+        break;
+      }
+      const batch = db.batch();
+      let operations = 0;
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data() || {};
+        const status = typeof data.status === "string" ? data.status : "active";
+        if (status !== "active") {
+          batch.delete(docSnap.ref);
+          deleted += 1;
+          operations += 1;
+        }
+      });
+      if (operations > 0) {
+        await batch.commit();
+      }
+      deletionCursor = snapshot.docs[snapshot.docs.length - 1];
+      hasMore = snapshot.size === INVITE_CLEANUP_BATCH_SIZE;
+    }
+  }
+
+  if (markedExpired > 0 || deleted > 0) {
+    logger.info("Invite cleanup summary", {markedExpired, deleted});
+  }
+
+  return {markedExpired, deleted};
+};
+
+const performCleanup = async () => {
+  const nowMillis = Date.now();
+  const cleanupThresholdTimestamp = admin.firestore.Timestamp.fromMillis(
+    Math.max(0, nowMillis - CLEANUP_GRACE_MINUTES * MINUTE_IN_MS),
+  );
+  const inviteRetentionMillis = INVITE_RETENTION_DAYS * DAY_IN_MS;
+  const inviteDeleteBeforeTimestamp = INVITE_RETENTION_DAYS > 0
+    ? admin.firestore.Timestamp.fromMillis(Math.max(0, nowMillis - inviteRetentionMillis))
+    : null;
+
+  const [linkCodesDeleted, authCodesDeleted, refreshTokensDeleted] = await Promise.all([
+    deleteExpiredDocuments({
+      collectionRef: linkCodeCollection,
+      timestampField: "expiresAt",
+      beforeTimestamp: cleanupThresholdTimestamp,
+      logLabel: "alexaLinkCodes",
+    }),
+    deleteExpiredDocuments({
+      collectionRef: authCodeCollection,
+      timestampField: "expiresAt",
+      beforeTimestamp: cleanupThresholdTimestamp,
+      logLabel: "alexaAuthCodes",
+    }),
+    deleteExpiredDocuments({
+      collectionRef: refreshTokenCollection,
+      timestampField: "expiresAt",
+      beforeTimestamp: cleanupThresholdTimestamp,
+      logLabel: "alexaRefreshTokens",
+    }),
+  ]);
+
+  const inviteResult = await cleanupInvites({
+    nowTimestamp: admin.firestore.Timestamp.fromMillis(nowMillis),
+    deleteBeforeTimestamp: inviteDeleteBeforeTimestamp,
+  });
+
+  const summary = {
+    linkCodesDeleted,
+    authCodesDeleted,
+    refreshTokensDeleted,
+    invitesMarkedExpired: inviteResult.markedExpired,
+    invitesDeleted: inviteResult.deleted,
+  };
+
+  logger.info("Cleanup cycle finished", summary);
+  return summary;
+};
+
+exports.cleanupStaleData = onSchedule(
+  {
+    schedule: "every 24 hours",
+    timeZone: "Asia/Tokyo",
+  },
+  async () => {
+    try {
+      await performCleanup();
+    } catch (error) {
+      logger.error("Scheduled cleanup failed", {error: error?.stack || error});
+      throw error;
+    }
+  },
+);
+
+exports.runMaintenanceCleanup = onCall({}, async (request) => {
+  if (!MAINTENANCE_TOKEN) {
+    throw new HttpsError("failed-precondition", "Maintenance token is not configured.");
+  }
+  const providedToken = request.data?.token;
+  if (providedToken !== MAINTENANCE_TOKEN) {
+    throw new HttpsError("permission-denied", "Invalid maintenance token.");
+  }
+  try {
+    const summary = await performCleanup();
+    return summary;
+  } catch (error) {
+    logger.error("Manual cleanup failed", {error: error?.stack || error});
+    throw new HttpsError("internal", "Cleanup failed.");
+  }
+});
 
 const isClientAllowed = (clientId, clientSecret, {enforceSecret = false} = {}) => {
   if (allowedClientId && clientId !== allowedClientId) {
