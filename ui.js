@@ -88,7 +88,11 @@ export function render(state) {
     editModeButtonElement.textContent = '編集・設定'
   }
 
-  state.items.forEach(item => {
+  const activeItems = state.items.filter(item => !item.completed);
+  const completedItems = state.items.filter(item => item.completed);
+  const itemsToRender = [...activeItems, ...completedItems];
+
+  itemsToRender.forEach(item => {
     const itemElement = createItemElement(
       item,
       onDeleteCallback,
