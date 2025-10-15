@@ -36,6 +36,7 @@ const requiredAuthParams = ["response_type", "client_id", "redirect_uri", "state
 const linkCodeCollection = db.collection("alexaLinkCodes");
 const authCodeCollection = db.collection("alexaAuthCodes");
 const refreshTokenCollection = db.collection("alexaRefreshTokens");
+const deviceRecoveryCollection = db.collection("deviceRecoveryKeys");
 
 const MINUTE_IN_MS = 60 * 1000;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -43,6 +44,53 @@ const CLEANUP_GRACE_MINUTES = Math.max(0, Number(process.env.CLEANUP_GRACE_MINUT
 const INVITE_RETENTION_DAYS = Math.max(0, Number(process.env.INVITE_RETENTION_DAYS || 30));
 const MAINTENANCE_TOKEN = process.env.MAINTENANCE_TOKEN || null;
 const INVITE_CLEANUP_BATCH_SIZE = 200;
+
+const parseMemberProfiles = (value) => {
+  const result = {};
+  if (!value || typeof value !== "object") {
+    return result;
+  }
+  for (const [memberId, profile] of Object.entries(value)) {
+    if (typeof memberId !== "string") {
+      continue;
+    }
+    const displayName = typeof profile?.displayName === "string" ? profile.displayName.trim() : "";
+    if (displayName) {
+      result[memberId] = displayName;
+    }
+  }
+  return result;
+};
+
+const buildMemberProfilesStorageMap = (profileNames) => {
+  const storage = {};
+  if (!profileNames || typeof profileNames !== "object") {
+    return storage;
+  }
+  for (const [memberId, displayName] of Object.entries(profileNames)) {
+    if (typeof memberId !== "string") {
+      continue;
+    }
+    if (typeof displayName === "string" && displayName.trim().length > 0) {
+      storage[memberId] = {displayName: displayName.trim()};
+    }
+  }
+  return storage;
+};
+
+const filterProfilesByMembers = (profileNames, members) => {
+  const allowed = new Set(Array.isArray(members) ? members : []);
+  const filtered = {};
+  if (!profileNames || typeof profileNames !== "object") {
+    return filtered;
+  }
+  for (const [memberId, displayName] of Object.entries(profileNames)) {
+    if (allowed.has(memberId) && typeof displayName === "string" && displayName.trim().length > 0) {
+      filtered[memberId] = displayName.trim();
+    }
+  }
+  return filtered;
+};
 
 const toMillis = (firestoreTimestamp) => {
   if (!firestoreTimestamp) {
@@ -263,6 +311,304 @@ exports.runMaintenanceCleanup = onCall({}, async (request) => {
   }
 });
 
+exports.registerDeviceRecovery = onCall({cors: true}, async (request) => {
+  const listId = typeof request.data?.listId === "string" ? request.data.listId.trim() : "";
+  const userId = typeof request.data?.userId === "string" ? request.data.userId.trim() : "";
+  const currentKey = typeof request.data?.recoveryKey === "string" ? request.data.recoveryKey.trim() : "";
+
+  if (!isNonEmptyString(listId) || !isNonEmptyString(userId)) {
+    throw new HttpsError("invalid-argument", "有効なリストIDとユーザーIDを指定してください。");
+  }
+
+  const listRef = db.collection("lists").doc(listId);
+  const listSnap = await listRef.get();
+  if (!listSnap.exists) {
+    throw new HttpsError("not-found", "指定されたリストが見つかりませんでした。");
+  }
+
+  const listData = listSnap.data() || {};
+  const members = Array.isArray(listData.members) ? listData.members : [];
+  if (!members.includes(userId)) {
+    throw new HttpsError("permission-denied", "このリストに対する権限がありません。");
+  }
+
+  let keyToUse = currentKey && currentKey.length > 0 ? currentKey : null;
+  let keyHash = null;
+  let recoveryRef = null;
+  let recoverySnap = null;
+
+  if (keyToUse) {
+    try {
+      keyHash = hashRecoveryKey(keyToUse);
+      recoveryRef = deviceRecoveryCollection.doc(keyHash);
+      recoverySnap = await recoveryRef.get();
+      if (!recoverySnap.exists || recoverySnap.data()?.listId !== listId || recoverySnap.data()?.disabled === true) {
+        keyToUse = null;
+        recoverySnap = null;
+        recoveryRef = null;
+      }
+    } catch (error) {
+      logger.warn("Failed to reuse recovery key", {error: error?.message || error});
+      keyToUse = null;
+      recoverySnap = null;
+      recoveryRef = null;
+    }
+  }
+
+  if (!keyToUse) {
+    let created = false;
+    for (let attempt = 0; attempt < 5 && !created; attempt += 1) {
+      const candidate = createRecoveryKey();
+      const candidateHash = hashRecoveryKey(candidate);
+      const candidateRef = deviceRecoveryCollection.doc(candidateHash);
+      const candidateSnap = await candidateRef.get();
+      if (!candidateSnap.exists) {
+        keyToUse = candidate;
+        keyHash = candidateHash;
+        recoveryRef = candidateRef;
+        recoverySnap = candidateSnap;
+        created = true;
+      }
+    }
+
+    if (!created || !keyToUse || !recoveryRef) {
+      throw new HttpsError("resource-exhausted", "復元コードを生成できませんでした。時間をおいて再試行してください。");
+    }
+  } else if (!keyHash || !recoveryRef) {
+    keyHash = hashRecoveryKey(keyToUse);
+    recoveryRef = deviceRecoveryCollection.doc(keyHash);
+    recoverySnap = await recoveryRef.get();
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const payload = {
+    listId,
+    lastRegisteredBy: userId,
+    lastRegisteredAt: now,
+    disabled: false,
+  };
+  if (!recoverySnap || !recoverySnap.exists) {
+    payload.createdAt = now;
+  }
+
+  await recoveryRef.set(payload, {merge: true});
+
+  return {
+    listId,
+    recoveryKey: keyToUse,
+  };
+});
+
+exports.claimDeviceRecovery = onCall({cors: true}, async (request) => {
+  const recoveryKey = typeof request.data?.recoveryKey === "string" ? request.data.recoveryKey.trim() : "";
+  const userId = typeof request.data?.userId === "string" ? request.data.userId.trim() : "";
+
+  if (!isNonEmptyString(recoveryKey) || !isNonEmptyString(userId)) {
+    throw new HttpsError("invalid-argument", "復元コードとユーザーIDを指定してください。");
+  }
+
+  const keyHash = hashRecoveryKey(recoveryKey);
+  const recoveryRef = deviceRecoveryCollection.doc(keyHash);
+
+  try {
+    const result = await db.runTransaction(async (transaction) => {
+      const recoverySnap = await transaction.get(recoveryRef);
+      if (!recoverySnap.exists) {
+        const error = new Error("Recovery key not found.");
+        error.code = "not-found";
+        throw error;
+      }
+      const recoveryData = recoverySnap.data() || {};
+      if (recoveryData.disabled) {
+        const error = new Error("Recovery key disabled.");
+        error.code = "failed-precondition";
+        throw error;
+      }
+      const listId = typeof recoveryData.listId === "string" ? recoveryData.listId : null;
+      if (!listId) {
+        const error = new Error("Recovery key missing list reference.");
+        error.code = "failed-precondition";
+        throw error;
+      }
+
+      const listRef = db.collection("lists").doc(listId);
+      const listSnap = await transaction.get(listRef);
+      if (!listSnap.exists) {
+        transaction.set(recoveryRef, {
+          disabled: true,
+          disabledAt: admin.firestore.FieldValue.serverTimestamp(),
+          disabledReason: "list-not-found",
+        }, {merge: true});
+        const error = new Error("Target list not found.");
+        error.code = "not-found";
+        throw error;
+      }
+
+      const listData = listSnap.data() || {};
+      const members = Array.isArray(listData.members) ? listData.members.slice() : [];
+      const alreadyMember = members.includes(userId);
+      if (!alreadyMember) {
+        members.push(userId);
+        transaction.update(listRef, {
+          members,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+
+      transaction.set(recoveryRef, {
+        lastClaimedBy: userId,
+        lastClaimedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+
+      return {
+        listId,
+        listName: typeof listData.name === "string" && listData.name.length > 0 ? listData.name : "共有買い物リスト",
+        alreadyMember,
+      };
+    });
+
+    return result;
+  } catch (error) {
+    if (error?.code && typeof error.code === "string") {
+      throw new HttpsError(error.code, error.message || "復元に失敗しました。");
+    }
+    logger.error("Device recovery claim failed", {error: error?.stack || error});
+    throw new HttpsError("internal", "復元に失敗しました。");
+  }
+});
+
+exports.trimListMembers = onCall({cors: true}, async (request) => {
+  const listId = typeof request.data?.listId === "string" ? request.data.listId.trim() : "";
+  const userId = typeof request.data?.userId === "string" ? request.data.userId.trim() : "";
+  const keepMembersInput = Array.isArray(request.data?.keepMembers) ? request.data.keepMembers : [];
+
+  if (!isNonEmptyString(listId) || !isNonEmptyString(userId)) {
+    throw new HttpsError("invalid-argument", "有効なリストIDとユーザーIDを指定してください。");
+  }
+
+  const normalizedKeepMembers = Array.from(new Set(keepMembersInput
+    .filter((value) => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim())));
+
+  if (!normalizedKeepMembers.includes(userId)) {
+    normalizedKeepMembers.push(userId);
+  }
+
+  if (normalizedKeepMembers.length === 0) {
+    throw new HttpsError("failed-precondition", "少なくとも1件の端末を残してください。");
+  }
+
+  const listRef = db.collection("lists").doc(listId);
+
+  const result = await db.runTransaction(async (transaction) => {
+    const listSnap = await transaction.get(listRef);
+    if (!listSnap.exists) {
+      throw new HttpsError("not-found", "指定されたリストが見つかりませんでした。");
+    }
+
+    const listData = listSnap.data() || {};
+    const members = Array.isArray(listData.members) ? listData.members : [];
+
+    if (!members.includes(userId)) {
+      throw new HttpsError("permission-denied", "このリストに対する権限がありません。");
+    }
+
+    const currentMemberSet = new Set(members);
+    const keepSet = new Set(normalizedKeepMembers.filter((memberId) => currentMemberSet.has(memberId)));
+
+    if (keepSet.size === 0) {
+      throw new HttpsError("failed-precondition", "少なくとも1件の端末を残してください。");
+    }
+
+    const updatedMembers = members.filter((memberId) => keepSet.has(memberId));
+    const currentProfiles = parseMemberProfiles(listData.memberProfiles);
+    const filteredProfiles = filterProfilesByMembers(currentProfiles, updatedMembers);
+    const storageProfiles = buildMemberProfilesStorageMap(filteredProfiles);
+
+    transaction.update(listRef, {
+      members: updatedMembers,
+      memberProfiles: storageProfiles,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return {
+      members: updatedMembers,
+      removedCount: members.length - updatedMembers.length,
+      memberProfiles: filteredProfiles,
+    };
+  });
+
+  logger.info("List members trimmed", {
+    listId,
+    userId,
+    removedCount: result.removedCount,
+  });
+
+  return result;
+});
+
+exports.updateDeviceProfile = onCall({cors: true}, async (request) => {
+  const listId = typeof request.data?.listId === "string" ? request.data.listId.trim() : "";
+  const userId = typeof request.data?.userId === "string" ? request.data.userId.trim() : "";
+  const memberId = typeof request.data?.memberId === "string" ? request.data.memberId.trim() : "";
+  const displayNameInput = typeof request.data?.displayName === "string" ? request.data.displayName : "";
+
+  if (!isNonEmptyString(listId) || !isNonEmptyString(userId) || !isNonEmptyString(memberId)) {
+    throw new HttpsError("invalid-argument", "有効なリストID、利用者ID、端末IDを指定してください。");
+  }
+
+  const trimmedDisplayName = displayNameInput.trim();
+  if (trimmedDisplayName.length > 32) {
+    throw new HttpsError("invalid-argument", "端末名は32文字以内で指定してください。");
+  }
+
+  const listRef = db.collection("lists").doc(listId);
+
+  const sanitizedProfiles = await db.runTransaction(async (transaction) => {
+    const listSnap = await transaction.get(listRef);
+    if (!listSnap.exists) {
+      throw new HttpsError("not-found", "指定されたリストが見つかりませんでした。");
+    }
+
+    const listData = listSnap.data() || {};
+    const members = Array.isArray(listData.members) ? listData.members : [];
+
+    if (!members.includes(userId)) {
+      throw new HttpsError("permission-denied", "このリストに対する権限がありません。");
+    }
+    if (!members.includes(memberId)) {
+      throw new HttpsError("not-found", "指定された端末が見つかりませんでした。");
+    }
+
+    const currentProfiles = parseMemberProfiles(listData.memberProfiles);
+
+    if (trimmedDisplayName) {
+      currentProfiles[memberId] = trimmedDisplayName;
+    } else {
+      delete currentProfiles[memberId];
+    }
+
+    const storageProfiles = buildMemberProfilesStorageMap(currentProfiles);
+
+    transaction.update(listRef, {
+      memberProfiles: storageProfiles,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return currentProfiles;
+  });
+
+  logger.info("List member profile updated", {
+    listId,
+    memberId,
+    userId,
+  });
+
+  return {
+    memberProfiles: sanitizedProfiles,
+  };
+});
+
 const isClientAllowed = (clientId, clientSecret, {enforceSecret = false} = {}) => {
   if (allowedClientId && clientId !== allowedClientId) {
     return false;
@@ -284,6 +630,17 @@ const generateRandomCode = (length) => {
 };
 
 const generateRandomToken = (byteLength = 32) => crypto.randomBytes(byteLength).toString("hex");
+
+const createRecoveryKey = () => crypto.randomBytes(32).toString("hex");
+
+const hashRecoveryKey = (value) => {
+  if (!value || typeof value !== "string") {
+    throw new Error("Recovery key must be a non-empty string");
+  }
+  return crypto.createHash("sha256").update(value).digest("hex");
+};
+
+const isNonEmptyString = (value) => typeof value === "string" && value.trim().length > 0;
 
 const htmlEscape = (value) => String(value || "").replace(/[&<>"]/g, (char) => {
   switch (char) {

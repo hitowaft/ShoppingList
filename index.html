@@ -1,53 +1,79 @@
 <!DOCTYPE html>
+
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>買い物リスト</title>
-  <link rel="stylesheet" href="shopping-list.css">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>買い物リスト</title>
+<link href="shopping-list.css" rel="stylesheet"/>
 </head>
 <body>
-  <main class="app">
-    <header class="app-header">
-      <h1>買い物リスト</h1>
-      <div class="header-actions">
-        <span id="userStatus" class="auth-status" aria-live="polite">読み込み中…</span>
-        <button id="editModeButton" class="secondary" aria-live="polite">編集</button>
-      </div>
-    </header>
-    <section id="shareControlsSection" class="share-controls is-hidden">
-      <button id="signOutButton" class="danger">データをリセット</button>
-      <button id="createInviteButton" class="secondary">共有リンクを発行</button>
-      <div id="inviteLinkContainer" class="invite-link is-hidden">
-        <p id="inviteStatus" class="invite-status" aria-live="polite">リンクはここに表示されます。</p>
-        <div class="invite-link__controls">
-          <input id="inviteLinkField" type="text" readonly value="">
-          <button id="copyInviteLink" class="secondary">コピー</button>
-        </div>
-      </div>
-    </section>
-    <section id="alexaLinkSection" class="share-controls is-hidden">
-      <button id="generateAlexaCodeButton" class="secondary">Alexa連携コードを発行</button>
-      <div id="alexaLinkCodeContainer" class="invite-link is-hidden">
-        <p id="alexaLinkStatus" class="invite-status" aria-live="polite">Alexaアプリで入力するコードがここに表示されます。</p>
-        <div class="invite-link__controls">
-          <input id="alexaLinkCodeField" type="text" readonly value="">
-          <button id="copyAlexaLinkCode" class="secondary">コピー</button>
-        </div>
-      </div>
-    </section>
-    <section class="input-group">
-      <label class="sr-only" for="itemInput">買うものを入力</label>
-      <input type="text" id="itemInput" placeholder="買うものを入力…">
-      <button id="addButton">追加</button>
-    </section>
-    <ul id="itemList" class="item-list"></ul>
-    <section class="actions">
-      <button id="clearCompletedButton" class="secondary">完了済みを削除</button>
-    </section>
-  </main>
+<main class="app">
+<header class="app-header">
+<h1>買い物リスト</h1>
+<div class="header-actions">
+<span aria-live="polite" class="auth-status" id="userStatus">読み込み中…</span>
+<button aria-live="polite" class="secondary" id="editModeButton">編集</button>
+</div>
+</header>
+<section class="share-controls is-hidden" id="shareControlsSection">
+  <button class="danger" id="signOutButton">データをリセット</button>
+  <button class="secondary" id="createInviteButton">共有リンクを発行</button>
+  <div class="invite-link is-hidden" id="inviteLinkContainer">
+    <p aria-live="polite" class="invite-status" id="inviteStatus">リンクはここに表示されます。</p>
+    <div class="invite-link__controls">
+      <input id="inviteLinkField" type="text" readonly value=""/>
+      <button class="secondary" id="copyInviteLink">コピー</button>
+    </div>
+  </div>
+  <section class="invite-link" id="recoverySection">
+    <p class="invite-status" aria-live="polite">端末を引き継ぐときは復元コードを利用できます。</p>
+    <div class="invite-link__controls">
+      <button class="secondary" id="showRecoveryKeyButton">復元コードを表示</button>
+    </div>
+    <div class="invite-link__controls is-hidden" id="deviceRecoveryContainer">
+      <input id="deviceRecoveryField" type="text" readonly value=""/>
+      <button class="secondary" id="copyDeviceRecovery">コピー</button>
+    </div>
+    <p aria-live="polite" class="invite-status" id="deviceRecoveryStatus">復元コードはここに表示されます。</p>
+    <div class="invite-link__controls" id="deviceRecoveryApplyContainer">
+      <input id="deviceRecoveryInput" type="text" placeholder="復元コードを入力"/>
+      <button class="secondary" id="applyDeviceRecovery">復元</button>
+    </div>
+    <p aria-live="polite" class="invite-status" id="deviceRecoveryApplyStatus">復元コードを入力すると以前のリストを復元できます。</p>
+  </section>
+  <section class="invite-link" id="deviceManagementSection">
+    <p aria-live="polite" class="invite-status" id="deviceManagementStatus">共有中の端末は 0 台です。</p>
+    <ul class="device-management-list" id="deviceManagementList"></ul>
+    <div class="device-management-actions">
+      <button class="secondary" id="deviceManagementSelectAll">全て選択</button>
+      <button class="secondary" id="deviceManagementDeselectAll">全て解除</button>
+    </div>
+    <button class="secondary" id="applyDeviceCleanup">選択した端末だけ残す</button>
+  </section>
+</section>
 
-  <script src="env.js"></script>
-  <script type="module" src="main.js"></script>
+<section class="share-controls is-hidden" id="alexaLinkSection">
+<button class="secondary" id="generateAlexaCodeButton">Alexa連携コードを発行</button>
+<div class="invite-link is-hidden" id="alexaLinkCodeContainer">
+<p aria-live="polite" class="invite-status" id="alexaLinkStatus">Alexaアプリで入力するコードがここに表示されます。</p>
+<div class="invite-link__controls">
+<input id="alexaLinkCodeField" readonly="" type="text" value=""/>
+<button class="secondary" id="copyAlexaLinkCode">コピー</button>
+</div>
+</div>
+</section>
+<section class="input-group">
+<label class="sr-only" for="itemInput">買うものを入力</label>
+<input id="itemInput" placeholder="買うものを入力…" type="text"/>
+<button id="addButton">追加</button>
+</section>
+<ul class="item-list" id="itemList"></ul>
+<section class="actions">
+<button class="secondary" id="clearCompletedButton">完了済みを削除</button>
+</section>
+</main>
+<script src="env.js"></script>
+<script src="main.js" type="module"></script>
 </body>
 </html>

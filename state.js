@@ -4,7 +4,9 @@ export const state = {
   user: null,
   userId: null,
   activeListId: null,
-  activeListName: ''
+  activeListName: '',
+  activeListMembers: [],
+  activeListMemberProfiles: {}
 };
 
 export function additem (itemText, id) {
