@@ -440,6 +440,7 @@ const updateDeviceProfileCallable = httpsCallable(functions, 'updateDeviceProfil
 
 const INVITE_VALID_DAYS = 7;
 const DEVICE_RECOVERY_STORAGE_KEY = 'shopping-list.deviceRecovery';
+const DEVICE_RECOVERY_REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const DEVICE_NAME_MAX_LENGTH = 32;
 
 const loadDeviceRecovery = () => {
@@ -454,10 +455,11 @@ const loadDeviceRecovery = () => {
     }
     const listId = typeof parsed.listId === 'string' ? parsed.listId : null;
     const recoveryKey = typeof parsed.recoveryKey === 'string' ? parsed.recoveryKey : null;
+    const lastRegisteredAt = typeof parsed.lastRegisteredAt === 'number' ? parsed.lastRegisteredAt : null;
     if (!listId || !recoveryKey) {
       return null;
     }
-    return { listId, recoveryKey };
+    return { listId, recoveryKey, lastRegisteredAt };
   } catch (error) {
     console.warn('復元情報の読み込みに失敗しました:', error);
     return null;
@@ -471,10 +473,19 @@ const saveDeviceRecovery = (value) => {
     }
     const payload = {
       listId: typeof value.listId === 'string' ? value.listId : null,
-      recoveryKey: typeof value.recoveryKey === 'string' ? value.recoveryKey : null
+      recoveryKey: typeof value.recoveryKey === 'string' ? value.recoveryKey : null,
+      lastRegisteredAt: typeof value.lastRegisteredAt === 'number' ? value.lastRegisteredAt : null
     };
     if (!payload.listId || !payload.recoveryKey) {
       return;
+    }
+    if (payload.lastRegisteredAt === null) {
+      const existing = loadDeviceRecovery();
+      if (existing && existing.listId === payload.listId && typeof existing.lastRegisteredAt === 'number') {
+        payload.lastRegisteredAt = existing.lastRegisteredAt;
+      } else {
+        payload.lastRegisteredAt = Date.now();
+      }
     }
     localStorage.setItem(DEVICE_RECOVERY_STORAGE_KEY, JSON.stringify(payload));
   } catch (error) {
@@ -495,6 +506,13 @@ const requestDeviceRecoveryKey = async (listId, userUid, {reuseStored = true} = 
     return null;
   }
   const storedRecovery = reuseStored ? loadDeviceRecovery() : null;
+  const now = Date.now();
+  if (storedRecovery && storedRecovery.listId === listId && storedRecovery.recoveryKey) {
+    const lastRegisteredAt = typeof storedRecovery.lastRegisteredAt === 'number' ? storedRecovery.lastRegisteredAt : null;
+    if (lastRegisteredAt && (now - lastRegisteredAt) < DEVICE_RECOVERY_REFRESH_INTERVAL_MS) {
+      return storedRecovery.recoveryKey;
+    }
+  }
   const requestPayload = {
     listId,
     userId: userUid,
@@ -506,7 +524,7 @@ const requestDeviceRecoveryKey = async (listId, userUid, {reuseStored = true} = 
   const receivedKey = typeof data?.recoveryKey === 'string' ? data.recoveryKey : null;
   const keyToPersist = receivedKey ?? (storedRecovery && storedRecovery.listId === listId ? storedRecovery.recoveryKey : null);
   if (keyToPersist) {
-    saveDeviceRecovery({ listId, recoveryKey: keyToPersist });
+    saveDeviceRecovery({ listId, recoveryKey: keyToPersist, lastRegisteredAt: now });
   }
   return keyToPersist;
 };
@@ -546,8 +564,12 @@ const attemptRestoreFromRecovery = async (userUid) => {
     state.activeListId = recoveredListId;
     state.activeListName = recoveredName;
     sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, recoveredListId);
-    saveDeviceRecovery({ listId: recoveredListId, recoveryKey: storedRecovery.recoveryKey });
-    return recoveredListId;
+    saveDeviceRecovery({
+      listId: recoveredListId,
+      recoveryKey: storedRecovery.recoveryKey,
+      lastRegisteredAt: typeof storedRecovery.lastRegisteredAt === 'number' ? storedRecovery.lastRegisteredAt : Date.now()
+    });
+    return { listId: recoveredListId, listData: null };
   } catch (error) {
     console.error('復元コードの適用に失敗しました:', error);
     const shouldClear =
@@ -810,7 +832,7 @@ const handleApplyDeviceRecovery = async () => {
       ? data.listName
       : '共有買い物リスト';
     sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, targetListId);
-    saveDeviceRecovery({ listId: targetListId, recoveryKey });
+    saveDeviceRecovery({ listId: targetListId, recoveryKey, lastRegisteredAt: Date.now() });
     stopItemsSubscription();
     state.items = [];
     handleStateUpdate();
@@ -1055,7 +1077,7 @@ async function ensureActiveList(user) {
         state.activeListId = storedListSnapshot.id;
         state.activeListName = storedListData.name ?? '共有買い物リスト';
         sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, storedListSnapshot.id);
-        return storedListSnapshot.id;
+        return { listId: storedListSnapshot.id, listData: storedListData };
       }
     } catch (error) {
       console.warn('保存済みリストの読み込みに失敗しました:', error);
@@ -1064,19 +1086,20 @@ async function ensureActiveList(user) {
     sessionStorage.removeItem(ACTIVE_LIST_STORAGE_KEY);
   }
 
-  const recoveredListId = await attemptRestoreFromRecovery(userUid);
-  if (recoveredListId) {
-    return recoveredListId;
+  const recoveredList = await attemptRestoreFromRecovery(userUid);
+  if (recoveredList) {
+    return recoveredList;
   }
 
   const existingListsSnapshot = await getDocs(query(listsCollection, where('members', 'array-contains', userUid)));
 
   if (!existingListsSnapshot.empty) {
     const firstList = existingListsSnapshot.docs[0];
+    const firstListData = firstList.data();
     state.activeListId = firstList.id;
-    state.activeListName = firstList.data().name ?? '共有買い物リスト';
+    state.activeListName = firstListData.name ?? '共有買い物リスト';
     sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, firstList.id);
-    return firstList.id;
+    return { listId: firstList.id, listData: firstListData };
   }
 
   const listName = 'マイリスト';
@@ -1092,7 +1115,15 @@ async function ensureActiveList(user) {
   state.activeListName = listName;
   sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, newListRef.id);
 
-  return newListRef.id;
+  return {
+    listId: newListRef.id,
+    listData: {
+      name: listName,
+      ownerUid: userUid,
+      members: [userUid],
+      memberProfiles: {}
+    }
+  };
 }
 
 async function handleSignedIn(user) {
@@ -1105,19 +1136,19 @@ async function handleSignedIn(user) {
   resetDeviceRecoveryUI();
 
   try {
-    let resolvedListId = null;
+    let resolvedList = null;
 
     if (pendingInviteCode) {
       try {
         setInviteStatusMessage('招待コードを確認しています…');
         const { listId: joinedListId } = await acceptInviteViaApi(pendingInviteCode, user.uid);
         if (joinedListId) {
-          resolvedListId = joinedListId;
-          state.activeListId = joinedListId;
           const joinedListSnapshot = await getDoc(doc(db, 'lists', joinedListId));
-          if (joinedListSnapshot.exists()) {
-            applyListStatus(joinedListId, joinedListSnapshot.data());
-          }
+          resolvedList = {
+            listId: joinedListId,
+            listData: joinedListSnapshot.exists() ? joinedListSnapshot.data() : null,
+          };
+          state.activeListId = joinedListId;
           sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, joinedListId);
           setInviteStatusMessage('招待が承認されました。');
         } else {
@@ -1133,16 +1164,32 @@ async function handleSignedIn(user) {
       }
     }
 
+    if (!resolvedList) {
+      resolvedList = await ensureActiveList(user);
+    }
+
+    const resolvedListId = resolvedList?.listId;
+    const resolvedListData = resolvedList?.listData ?? null;
     if (!resolvedListId) {
-      resolvedListId = await ensureActiveList(user);
+      throw new Error('共有リストを特定できませんでした。');
     }
 
     stopItemsSubscription();
     state.items = [];
     handleStateUpdate();
     startItemsSubscription(resolvedListId);
-    await refreshListStatus(resolvedListId);
-    await ensureDeviceRecovery(resolvedListId, user.uid);
+
+    if (resolvedListData) {
+      applyListStatus(resolvedListId, resolvedListData);
+    }
+
+    const postLoadTasks = [];
+    if (!resolvedListData) {
+      postLoadTasks.push(refreshListStatus(resolvedListId));
+    }
+    postLoadTasks.push(ensureDeviceRecovery(resolvedListId, user.uid));
+    await Promise.all(postLoadTasks);
+
     if (createInviteButton) {
       createInviteButton.disabled = false;
     }

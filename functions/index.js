@@ -767,9 +767,14 @@ const addItemToFirestore = async (listId, itemName, userId) => {
   return docRef.id;
 };
 
+const isLaunchRequest = (handlerInput) => {
+  const requestType = handlerInput?.requestEnvelope?.request?.type;
+  return typeof requestType === "string" && requestType.toLowerCase() === "launchrequest".toLowerCase();
+};
+
 const LaunchRequestHandler = {
   canHandle(handlerInput) {
-    return handlerInput.requestEnvelope.request.type === "LaunchRequest";
+    return isLaunchRequest(handlerInput);
   },
   handle(handlerInput) {
     logger.info("LaunchRequest reached handler");
@@ -780,16 +785,36 @@ const LaunchRequestHandler = {
   }
 };
 
+const ADD_ITEM_INTENT_NAMES = new Set(["addItem", "AddItemIntent"]);
+
 const AddItemIntentHandler = {
   canHandle(handlerInput) {
-    return handlerInput.requestEnvelope.request.type === "IntentRequest" &&
-      handlerInput.requestEnvelope.request.intent.name === "addItem";
+    if (handlerInput.requestEnvelope?.request?.type !== "IntentRequest") {
+      return false;
+    }
+    const intentName = handlerInput.requestEnvelope?.request?.intent?.name;
+    return typeof intentName === "string" && ADD_ITEM_INTENT_NAMES.has(intentName);
   },
   async handle(handlerInput) {
+    const intentName = handlerInput.requestEnvelope?.request?.intent?.name;
+    logger.info("Add item intent received", {intentName});
     const rawItemName = Alexa.getSlotValue(handlerInput.requestEnvelope, "shoppingItem");
     const itemName = rawItemName ? rawItemName.trim() : "";
 
     if (!itemName) {
+      return handlerInput.responseBuilder
+        .speak("追加したいアイテムをもう一度教えてください。")
+        .reprompt("何を買い物リストに加えますか？")
+        .getResponse();
+    }
+
+    const itemCandidates = itemName
+      .split(/(?:と|、|,|＆|and)/i)
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    const uniqueItems = [...new Set(itemCandidates)];
+
+    if (uniqueItems.length === 0) {
       return handlerInput.responseBuilder
         .speak("追加したいアイテムをもう一度教えてください。")
         .reprompt("何を買い物リストに加えますか？")
@@ -813,8 +838,11 @@ const AddItemIntentHandler = {
     }
 
     try {
-      await addItemToFirestore(listId, itemName, linkedUid);
-      const speechText = `${itemName} をリストに追加しました。`;
+      await Promise.all(
+        uniqueItems.map((name) => addItemToFirestore(listId, name, linkedUid))
+      );
+      const joinedNames = uniqueItems.join("、");
+      const speechText = `${joinedNames} をリストに追加しました。`;
       return handlerInput.responseBuilder
         .speak(speechText)
         .withSimpleCard("買い物リスト", speechText)
@@ -881,6 +909,22 @@ const SessionEndedRequestHandler = {
   }
 };
 
+const UnhandledRequestHandler = {
+  canHandle() {
+    return true;
+  },
+  handle(handlerInput) {
+    const requestType = handlerInput?.requestEnvelope?.request?.type;
+    const intentName = handlerInput?.requestEnvelope?.request?.intent?.name;
+    const requestId = handlerInput?.requestEnvelope?.request?.requestId;
+    logger.warn("Unhandled Alexa request", {requestType, intentName, requestId});
+    return handlerInput.responseBuilder
+      .speak("すみません、うまく理解できませんでした。もう一度お試しください。")
+      .reprompt("何をリストに追加しますか？")
+      .getResponse();
+  }
+};
+
 const GlobalErrorHandler = {
   canHandle() {
     return true;
@@ -909,6 +953,7 @@ const alexaSkill = skillBuilder
     CancelAndStopIntentHandler,
     FallbackIntentHandler,
     SessionEndedRequestHandler,
+    UnhandledRequestHandler,
   )
   .addErrorHandlers(GlobalErrorHandler)
   .withCustomUserAgent("shopping-list/alexa")
@@ -917,9 +962,18 @@ const alexaSkill = skillBuilder
 exports.alexaShoppingList = onRequest(async (req, res) => {
   try {
     const requestBody = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    const requestType = requestBody?.request?.type || null;
+    const intentName = requestBody?.request?.intent?.name || null;
+    const requestId = requestBody?.request?.requestId || null;
+    const locale = requestBody?.request?.locale || null;
     logger.info("Alexa request received", {
       method: req.method,
       headers: req.headers,
+      requestType,
+      intentName,
+      requestId,
+      locale,
+      rawRequest: requestBody?.request,
     });
     const responseEnvelope = await alexaSkill.invoke(requestBody);
     res.status(200).json(responseEnvelope);
