@@ -40,6 +40,7 @@ const deviceManagementStatusLabel = document.getElementById('deviceManagementSta
 const deviceManagementSelectAllButton = document.getElementById('deviceManagementSelectAll');
 const deviceManagementDeselectAllButton = document.getElementById('deviceManagementDeselectAll');
 const applyDeviceCleanupButton = document.getElementById('applyDeviceCleanup');
+const inputGroupSection = document.querySelector('.input-group');
 
 const urlParams = new URLSearchParams(window.location.search);
 let pendingInviteCode = (urlParams.get('invite') ?? '').trim();
@@ -1015,6 +1016,15 @@ const handleApplyDeviceCleanup = async () => {
 const handleStateUpdate = () => {
   render(state);
   updateShareControlsVisibility();
+  if (inputGroupSection) {
+    inputGroupSection.classList.toggle('is-hidden', state.isEditing);
+  }
+  if (inputElement) {
+    inputElement.disabled = state.isEditing;
+  }
+  if (addButton) {
+    addButton.disabled = state.isEditing;
+  }
 };
 
 function startItemsSubscription(listId) {

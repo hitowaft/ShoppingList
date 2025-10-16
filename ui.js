@@ -14,41 +14,32 @@ export function initUI(config) {
 
 function createItemElement(item, onDelete, onToggle, onUpdate, isEditing, state) {
   const li = document.createElement('li');
-  const span = document.createElement('span');
   const checkbox = document.createElement('input');
 
   checkbox.type = 'checkbox';
   checkbox.checked = item.completed;
   if (item.completed) {
-    span.classList.add('completed');
     li.classList.add('completed');
   }
-
-  span.textContent = item.text;
 
   checkbox.addEventListener('change', () => {
     onToggle(item.id);
   });
 
-  span.addEventListener('click', () => {
-    if (isEditing) return;
-
-    onToggle(item.id);
-  })
-
-  span.addEventListener('click', () => {
-    if (!isEditing) return;
-
+  let contentElement;
+  if (isEditing) {
     const input = document.createElement('input');
     input.type = 'text';
     input.value = item.text;
+    if (item.completed) {
+      input.classList.add('completed');
+    }
 
     const finishEditing = () => {
       const newText = input.value.trim();
-
       if (newText && newText !== item.text) {
         onUpdate(item.id, newText);
-      } else {
+      } else if (!newText) {
         render(state);
       }
     };
@@ -60,12 +51,21 @@ function createItemElement(item, onDelete, onToggle, onUpdate, isEditing, state)
 
     input.addEventListener('blur', finishEditing);
 
-    li.replaceChild(input, span);
-    input.focus();
-  })
+    contentElement = input;
+  } else {
+    const span = document.createElement('span');
+    if (item.completed) {
+      span.classList.add('completed');
+    }
+    span.textContent = item.text;
+    span.addEventListener('click', () => {
+      onToggle(item.id);
+    });
+    contentElement = span;
+  }
 
   li.appendChild(checkbox);
-  li.appendChild(span);
+  li.appendChild(contentElement);
 
   if (isEditing) {
     const delButton = document.createElement('button');
