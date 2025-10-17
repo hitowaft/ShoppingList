@@ -45,6 +45,57 @@ const INVITE_RETENTION_DAYS = Math.max(0, Number(process.env.INVITE_RETENTION_DA
 const MAINTENANCE_TOKEN = process.env.MAINTENANCE_TOKEN || null;
 const INVITE_CLEANUP_BATCH_SIZE = 200;
 
+const getAuthenticatedUserId = (request, {fieldName = "userId"} = {}) => {
+  const authUid = request?.auth?.uid;
+  if (!authUid) {
+    throw new HttpsError("unauthenticated", "認証済みのユーザーのみが利用できます。");
+  }
+  const providedUserId = typeof request.data?.[fieldName] === "string"
+    ? request.data[fieldName].trim()
+    : "";
+  if (providedUserId && providedUserId !== authUid) {
+    logger.warn("Callable request user mismatch", {authUid, providedUserId});
+    throw new HttpsError("permission-denied", "リクエストのユーザーIDが認証情報と一致しません。");
+  }
+  return authUid;
+};
+
+const parseBasicAuthHeader = (authorizationHeader) => {
+  if (!authorizationHeader || typeof authorizationHeader !== "string") {
+    return null;
+  }
+  const trimmed = authorizationHeader.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const [scheme, ...rest] = trimmed.split(" ");
+  if ((scheme || "").toLowerCase() !== "basic") {
+    return null;
+  }
+  const encoded = rest.join(" ").trim();
+  if (!encoded) {
+    return null;
+  }
+  let decoded;
+  try {
+    decoded = Buffer.from(encoded, "base64").toString("utf8");
+  } catch (error) {
+    logger.warn("Failed to decode Basic auth header", {error: error?.message || error});
+    return null;
+  }
+  const separatorIndex = decoded.indexOf(":");
+  if (separatorIndex === -1) {
+    return {
+      clientId: decoded,
+      clientSecret: "",
+    };
+  }
+  return {
+    clientId: decoded.slice(0, separatorIndex),
+    clientSecret: decoded.slice(separatorIndex + 1),
+  };
+};
+
 const parseMemberProfiles = (value) => {
   const result = {};
   if (!value || typeof value !== "object") {
@@ -312,12 +363,12 @@ exports.runMaintenanceCleanup = onCall({}, async (request) => {
 });
 
 exports.registerDeviceRecovery = onCall({cors: true}, async (request) => {
+  const userId = getAuthenticatedUserId(request);
   const listId = typeof request.data?.listId === "string" ? request.data.listId.trim() : "";
-  const userId = typeof request.data?.userId === "string" ? request.data.userId.trim() : "";
   const currentKey = typeof request.data?.recoveryKey === "string" ? request.data.recoveryKey.trim() : "";
 
-  if (!isNonEmptyString(listId) || !isNonEmptyString(userId)) {
-    throw new HttpsError("invalid-argument", "有効なリストIDとユーザーIDを指定してください。");
+  if (!isNonEmptyString(listId)) {
+    throw new HttpsError("invalid-argument", "有効なリストIDを指定してください。");
   }
 
   const listRef = db.collection("lists").doc(listId);
@@ -400,11 +451,11 @@ exports.registerDeviceRecovery = onCall({cors: true}, async (request) => {
 });
 
 exports.claimDeviceRecovery = onCall({cors: true}, async (request) => {
+  const userId = getAuthenticatedUserId(request);
   const recoveryKey = typeof request.data?.recoveryKey === "string" ? request.data.recoveryKey.trim() : "";
-  const userId = typeof request.data?.userId === "string" ? request.data.userId.trim() : "";
 
-  if (!isNonEmptyString(recoveryKey) || !isNonEmptyString(userId)) {
-    throw new HttpsError("invalid-argument", "復元コードとユーザーIDを指定してください。");
+  if (!isNonEmptyString(recoveryKey)) {
+    throw new HttpsError("invalid-argument", "復元コードを指定してください。");
   }
 
   const keyHash = hashRecoveryKey(recoveryKey);
@@ -478,12 +529,12 @@ exports.claimDeviceRecovery = onCall({cors: true}, async (request) => {
 });
 
 exports.trimListMembers = onCall({cors: true}, async (request) => {
+  const userId = getAuthenticatedUserId(request);
   const listId = typeof request.data?.listId === "string" ? request.data.listId.trim() : "";
-  const userId = typeof request.data?.userId === "string" ? request.data.userId.trim() : "";
   const keepMembersInput = Array.isArray(request.data?.keepMembers) ? request.data.keepMembers : [];
 
-  if (!isNonEmptyString(listId) || !isNonEmptyString(userId)) {
-    throw new HttpsError("invalid-argument", "有効なリストIDとユーザーIDを指定してください。");
+  if (!isNonEmptyString(listId)) {
+    throw new HttpsError("invalid-argument", "有効なリストIDを指定してください。");
   }
 
   const normalizedKeepMembers = Array.from(new Set(keepMembersInput
@@ -548,13 +599,13 @@ exports.trimListMembers = onCall({cors: true}, async (request) => {
 });
 
 exports.updateDeviceProfile = onCall({cors: true}, async (request) => {
+  const userId = getAuthenticatedUserId(request);
   const listId = typeof request.data?.listId === "string" ? request.data.listId.trim() : "";
-  const userId = typeof request.data?.userId === "string" ? request.data.userId.trim() : "";
   const memberId = typeof request.data?.memberId === "string" ? request.data.memberId.trim() : "";
   const displayNameInput = typeof request.data?.displayName === "string" ? request.data.displayName : "";
 
-  if (!isNonEmptyString(listId) || !isNonEmptyString(userId) || !isNonEmptyString(memberId)) {
-    throw new HttpsError("invalid-argument", "有効なリストID、利用者ID、端末IDを指定してください。");
+  if (!isNonEmptyString(listId) || !isNonEmptyString(memberId)) {
+    throw new HttpsError("invalid-argument", "有効なリストIDと端末IDを指定してください。");
   }
 
   const trimmedDisplayName = displayNameInput.trim();
@@ -968,12 +1019,10 @@ exports.alexaShoppingList = onRequest(async (req, res) => {
     const locale = requestBody?.request?.locale || null;
     logger.info("Alexa request received", {
       method: req.method,
-      headers: req.headers,
       requestType,
       intentName,
       requestId,
       locale,
-      rawRequest: requestBody?.request,
     });
     const responseEnvelope = await alexaSkill.invoke(requestBody);
     res.status(200).json(responseEnvelope);
@@ -1230,8 +1279,20 @@ const handleRefreshTokenGrant = async ({refreshToken, clientId, clientSecret}) =
 alexaAuthApp.post("/token", async (req, res) => {
   try {
     const grantType = req.body?.grant_type;
-    const clientId = req.body?.client_id;
-    const clientSecret = req.body?.client_secret;
+    let clientId = req.body?.client_id;
+    let clientSecret = req.body?.client_secret;
+
+    if ((!clientId || !clientSecret) && req.headers?.authorization) {
+      const basicCredentials = parseBasicAuthHeader(req.headers.authorization);
+      if (basicCredentials) {
+        if (!clientId && basicCredentials.clientId) {
+          clientId = basicCredentials.clientId;
+        }
+        if (!clientSecret && typeof basicCredentials.clientSecret === "string") {
+          clientSecret = basicCredentials.clientSecret;
+        }
+      }
+    }
 
     if (!grantType) {
       res.status(400).json({error: "invalid_request", error_description: "grant_type is required"});
@@ -1311,10 +1372,7 @@ exports.acceptInvite = onCall({cors: true}, async (request) => {
     throw new HttpsError("invalid-argument", "有効な招待コードを指定してください。");
   }
 
-  const userId = request.data?.userId;
-  if (!userId || typeof userId !== "string") {
-    throw new HttpsError("invalid-argument", "有効なユーザーIDを指定してください。");
-  }
+  const userId = getAuthenticatedUserId(request);
 
   const inviteRef = db.collection("invites").doc(inviteCode);
   const inviteSnap = await inviteRef.get();
@@ -1385,10 +1443,7 @@ exports.createAlexaLinkCode = onCall({cors: true}, async (request) => {
     throw new HttpsError("invalid-argument", "有効なリストIDを指定してください。");
   }
 
-  const userId = request.data?.userId;
-  if (!userId || typeof userId !== "string") {
-    throw new HttpsError("invalid-argument", "有効なユーザーIDを指定してください。");
-  }
+  const userId = getAuthenticatedUserId(request);
 
   const listRef = db.collection("lists").doc(listId);
   const listSnap = await listRef.get();
