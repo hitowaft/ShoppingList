@@ -177,6 +177,29 @@ body {
   flex-wrap: wrap;
 }
 
+.settings-links {
+  margin-top: 8px;
+}
+
+.settings-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-link::after {
+  content: "↗";
+  font-size: 0.8rem;
+}
+
+.settings-link:hover,
+.settings-link:focus {
+  text-decoration: underline;
+}
+
 @media (max-width: 480px) {
   .device-management-item {
     flex-direction: column;
