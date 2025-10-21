@@ -41,10 +41,15 @@ const deviceManagementSelectAllButton = document.getElementById('deviceManagemen
 const deviceManagementDeselectAllButton = document.getElementById('deviceManagementDeselectAll');
 const applyDeviceCleanupButton = document.getElementById('applyDeviceCleanup');
 const inputGroupSection = document.querySelector('.input-group');
+const appMainElement = document.getElementById('appMain');
+const startScreenElement = document.getElementById('startScreen');
+const startListButton = document.getElementById('startListButton');
+const startListButtonDefaultLabel = startListButton ? startListButton.textContent : '';
 
 const urlParams = new URLSearchParams(window.location.search);
 let pendingInviteCode = (urlParams.get('invite') ?? '').trim();
 const selectedDeviceIds = new Set();
+let isCreatingList = false;
 
 const formatDeviceId = (value) => {
   if (typeof value !== 'string' || value.length === 0) {
@@ -106,6 +111,32 @@ const setDeviceManagementStatusMessage = (message, {autoReset = false} = {}) => 
       deviceManagementStatusResetTimer = null;
     }, 3000);
   }
+};
+
+const hideStartScreen = () => {
+  if (startScreenElement) {
+    startScreenElement.classList.add('is-hidden');
+  }
+  if (appMainElement) {
+    appMainElement.classList.remove('is-hidden');
+  }
+};
+
+const showStartScreen = () => {
+  if (startScreenElement) {
+    startScreenElement.classList.remove('is-hidden');
+  }
+  if (appMainElement) {
+    appMainElement.classList.add('is-hidden');
+  }
+};
+
+const resetStartButtonState = () => {
+  if (startListButton) {
+    startListButton.disabled = false;
+    startListButton.textContent = startListButtonDefaultLabel;
+  }
+  isCreatingList = false;
 };
 
 const updateDeviceManagementStatus = () => {
@@ -1112,6 +1143,14 @@ async function ensureActiveList(user) {
     return { listId: firstList.id, listData: firstListData };
   }
 
+  return null;
+}
+
+async function createNewListForUser(user) {
+  if (!user?.uid) {
+    throw new Error('ユーザー情報を取得できませんでした。');
+  }
+  const userUid = user.uid;
   const listName = 'マイリスト';
 
   const newListRef = await addDoc(listsCollection, {
@@ -1134,6 +1173,42 @@ async function ensureActiveList(user) {
       memberProfiles: {}
     }
   };
+}
+
+async function activateListForUser(user, resolvedList) {
+  const resolvedListId = resolvedList?.listId;
+  const resolvedListData = resolvedList?.listData ?? null;
+  if (!resolvedListId) {
+    throw new Error('共有リストを特定できませんでした。');
+  }
+
+  hideStartScreen();
+
+  stopItemsSubscription();
+  state.items = [];
+  handleStateUpdate();
+  startItemsSubscription(resolvedListId);
+
+  if (resolvedListData) {
+    applyListStatus(resolvedListId, resolvedListData);
+  }
+
+  const postLoadTasks = [];
+  if (!resolvedListData) {
+    postLoadTasks.push(refreshListStatus(resolvedListId));
+  }
+  postLoadTasks.push(ensureDeviceRecovery(resolvedListId, user.uid));
+  await Promise.all(postLoadTasks);
+
+  if (createInviteButton) {
+    createInviteButton.disabled = false;
+  }
+  setInviteStatusMessage('共有リンクを発行して、家族と共有しましょう。');
+  setAlexaLinkStatusMessage('Alexaアプリで入力するコードがここに表示されます。');
+  if (signOutButton) {
+    signOutButton.classList.remove('is-hidden');
+    signOutButton.textContent = 'データをリセット';
+  }
 }
 
 async function handleSignedIn(user) {
@@ -1178,37 +1253,18 @@ async function handleSignedIn(user) {
       resolvedList = await ensureActiveList(user);
     }
 
-    const resolvedListId = resolvedList?.listId;
-    const resolvedListData = resolvedList?.listData ?? null;
-    if (!resolvedListId) {
-      throw new Error('共有リストを特定できませんでした。');
+    if (!resolvedList) {
+      stopItemsSubscription();
+      resetListState();
+      handleStateUpdate();
+      showStartScreen();
+      resetStartButtonState();
+      setUserStatusMessage('ボタンを押して買い物リストを開始しましょう。');
+      return;
     }
 
-    stopItemsSubscription();
-    state.items = [];
-    handleStateUpdate();
-    startItemsSubscription(resolvedListId);
-
-    if (resolvedListData) {
-      applyListStatus(resolvedListId, resolvedListData);
-    }
-
-    const postLoadTasks = [];
-    if (!resolvedListData) {
-      postLoadTasks.push(refreshListStatus(resolvedListId));
-    }
-    postLoadTasks.push(ensureDeviceRecovery(resolvedListId, user.uid));
-    await Promise.all(postLoadTasks);
-
-    if (createInviteButton) {
-      createInviteButton.disabled = false;
-    }
-    setInviteStatusMessage('共有リンクを発行して、家族と共有しましょう。');
-    setAlexaLinkStatusMessage('Alexaアプリで入力するコードがここに表示されます。');
-    if (signOutButton) {
-      signOutButton.classList.remove('is-hidden');
-      signOutButton.textContent = 'データをリセット';
-    }
+    hideStartScreen();
+    await activateListForUser(user, resolvedList);
   } catch (error) {
     console.error('リストの初期化に失敗しました:', error);
     alert('買い物リストを読み込めませんでした。ページを再読み込みして再試行してください。');
@@ -1224,7 +1280,9 @@ function handleSignedOut() {
   resetAlexaLinkUI();
   resetListState();
   handleStateUpdate();
-  setUserStatusMessage('リストが初期化されました。ページを再読み込みしてください。');
+  showStartScreen();
+  resetStartButtonState();
+  setUserStatusMessage('ボタンを押して買い物リストを開始しましょう。');
   resetDeviceRecoveryUI();
 }
 
@@ -1304,7 +1362,37 @@ const handleUpdateItemText = async (itemId, newText) => {
     alert("エラーが発生して更新できませんでした。");
   }
   
-}
+};
+
+const handleStartListWithoutLogin = async () => {
+  if (isCreatingList || state.activeListId) {
+    return;
+  }
+  try {
+    isCreatingList = true;
+    if (startListButton) {
+      startListButton.disabled = true;
+      startListButton.textContent = 'リストを作成しています…';
+    }
+    setUserStatusMessage('リストを作成しています…');
+    const authUser = state.user ?? await ensureAuthUser();
+    if (!authUser) {
+      throw new Error('ユーザー情報を取得できませんでした。');
+    }
+    let resolvedList = await ensureActiveList(authUser);
+    if (!resolvedList) {
+      resolvedList = await createNewListForUser(authUser);
+    }
+    await activateListForUser(authUser, resolvedList);
+  } catch (error) {
+    console.error('新しいリストの作成に失敗しました:', error);
+    alert(error?.message ?? '新しいリストを作成できませんでした。時間をおいて再試しください。');
+    setUserStatusMessage('リストを作成できませんでした。再度お試しください。');
+    showStartScreen();
+  } finally {
+    resetStartButtonState();
+  }
+};
 
 // --- UIの初期化 ---
 initUI({
@@ -1329,6 +1417,7 @@ function enterKeyPress(event) {
 
 clearCompletedButton.addEventListener('click', handleClearCompleted);
 
+startListButton?.addEventListener('click', handleStartListWithoutLogin);
 createInviteButton?.addEventListener('click', handleCreateInviteLink);
 copyInviteLinkButton?.addEventListener('click', handleCopyInviteLink);
 generateAlexaCodeButton?.addEventListener('click', handleGenerateAlexaLinkCode);

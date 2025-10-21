@@ -8,7 +8,15 @@
 <link href="shopping-list.css" rel="stylesheet"/>
 </head>
 <body>
-<main class="app">
+<section class="start-screen" id="startScreen">
+  <div class="start-screen__content">
+    <h2>共有買い物リスト</h2>
+    <p>特徴１： 連携することで、「アレクサ、買い物メモで卵を追加」のように話しかけてアイテムをリストに追加できます。</p>
+    <p>特徴２：　招待リンクを送ることで、家族間などでリストを共有できます。</p>
+    <button id="startListButton">ログインなしで買い物リストを始める</button>
+  </div>
+</section>
+<main class="app is-hidden" id="appMain">
 <header class="app-header">
 <h1>買い物リスト</h1>
 <div class="header-actions">
