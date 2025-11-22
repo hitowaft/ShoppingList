@@ -1058,6 +1058,13 @@ const handleStateUpdate = () => {
   }
 };
 
+const resolveItemIndex = (items, indexHint, id) => {
+  if (typeof indexHint === 'number' && indexHint >= 0 && indexHint < items.length) {
+    return indexHint;
+  }
+  return items.findIndex((item) => item.id === id);
+};
+
 function startItemsSubscription(listId) {
   if (!listId) return;
 
@@ -1066,19 +1073,58 @@ function startItemsSubscription(listId) {
   unsubscribeFromItems = onSnapshot(
     itemsQuery,
     (querySnapshot) => {
-      const fetchedItems = [];
-      querySnapshot.forEach((doc) => {
-        const itemData = doc.data();
+      const changes = querySnapshot.docChanges();
+      if (!changes.length) {
+        return;
+      }
 
-        fetchedItems.push({
-          id: doc.id,
-          text: itemData.name,
-          completed: itemData.completed,
-        });
+      let mutated = false;
+
+      changes.forEach((change) => {
+        const itemData = change.doc.data();
+        const nextItem = {
+          id: change.doc.id,
+          text: typeof itemData.name === 'string' ? itemData.name : '',
+          completed: Boolean(itemData.completed),
+        };
+
+        if (change.type === 'added') {
+          const targetIndex = typeof change.newIndex === 'number'
+            ? Math.min(change.newIndex, state.items.length)
+            : state.items.length;
+          state.items.splice(targetIndex, 0, nextItem);
+          mutated = true;
+          return;
+        }
+
+        const currentIndex = resolveItemIndex(state.items, change.oldIndex, change.doc.id);
+
+        if (change.type === 'modified') {
+          if (currentIndex !== -1) {
+            state.items.splice(currentIndex, 1);
+          }
+          const insertionLength = state.items.length;
+          const targetIndex = typeof change.newIndex === 'number' && change.newIndex >= 0
+            ? Math.min(change.newIndex, insertionLength)
+            : (currentIndex !== -1 ? Math.min(currentIndex, insertionLength) : insertionLength);
+          state.items.splice(
+            typeof targetIndex === 'number' && targetIndex >= 0 ? targetIndex : state.items.length,
+            0,
+            nextItem
+          );
+          mutated = true;
+          return;
+        }
+
+        if (change.type === 'removed' && currentIndex !== -1) {
+          state.items.splice(currentIndex, 1);
+          mutated = true;
+        }
       });
 
-      state.items = fetchedItems;
-      handleStateUpdate();
+      if (mutated) {
+        handleStateUpdate();
+      }
     },
     (error) => {
       console.error("買い物リストの購読中にエラーが発生しました:", error);

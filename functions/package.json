@@ -10,7 +10,7 @@
     "serve": "firebase emulators:start --only functions"
   },
   "engines": {
-    "node": "18"
+    "node": "20"
   },
   "dependencies": {
     "ask-sdk-core": "^2.13.0",

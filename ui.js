@@ -3,6 +3,8 @@ let onDeleteCallback;
 let onToggleCallback;
 let onUpdateCallback;
 let editModeButtonElement;
+const itemElements = new Map();
+let currentEditMode = null;
 
 export function initUI(config) {
   listElement = config.listElement;
@@ -14,6 +16,7 @@ export function initUI(config) {
 
 function createItemElement(item, onDelete, onToggle, onUpdate, isEditing, state) {
   const li = document.createElement('li');
+  li.dataset.mode = isEditing ? 'edit' : 'view';
   const checkbox = document.createElement('input');
 
   checkbox.type = 'checkbox';
@@ -79,28 +82,86 @@ function createItemElement(item, onDelete, onToggle, onUpdate, isEditing, state)
   return li;
 }
 
-export function render(state) {
-  listElement.innerHTML = '';
+function updateItemElement(element, item, isEditing) {
+  const checkbox = element.querySelector('input[type="checkbox"]');
+  if (checkbox) {
+    checkbox.checked = item.completed;
+  }
 
-  if (state.isEditing) {
-    editModeButtonElement.textContent = '設定完了'
+  element.classList.toggle('completed', item.completed);
+
+  if (isEditing) {
+    const input = element.querySelector('input[type="text"]');
+    if (input) {
+      if (input.value !== item.text) {
+        input.value = item.text;
+      }
+      input.classList.toggle('completed', item.completed);
+    }
   } else {
-    editModeButtonElement.textContent = '編集・設定'
+    const span = element.querySelector('span');
+    if (span && span.textContent !== item.text) {
+      span.textContent = item.text;
+    }
+    if (span) {
+      span.classList.toggle('completed', item.completed);
+    }
+  }
+
+  return element;
+}
+
+export function render(state) {
+  if (!listElement) {
+    return;
+  }
+
+  if (editModeButtonElement) {
+    editModeButtonElement.textContent = state.isEditing ? '設定完了' : '編集・設定';
   }
 
   const activeItems = state.items.filter(item => !item.completed);
   const completedItems = state.items.filter(item => item.completed);
   const itemsToRender = [...activeItems, ...completedItems];
+  const modeChanged = currentEditMode !== state.isEditing;
+
+  if (modeChanged) {
+    listElement.innerHTML = '';
+    itemElements.clear();
+  }
+
+  const fragment = document.createDocumentFragment();
+  const nextIds = new Set();
 
   itemsToRender.forEach(item => {
-    const itemElement = createItemElement(
-      item,
-      onDeleteCallback,
-      onToggleCallback,
-      onUpdateCallback,
-      state.isEditing,
-      state
-    );
-    listElement.appendChild(itemElement);
+    nextIds.add(item.id);
+    let itemElement = itemElements.get(item.id);
+    const elementMode = itemElement?.dataset?.mode;
+    const modeKey = state.isEditing ? 'edit' : 'view';
+    if (!itemElement || elementMode !== modeKey) {
+      itemElement = createItemElement(
+        item,
+        onDeleteCallback,
+        onToggleCallback,
+        onUpdateCallback,
+        state.isEditing,
+        state
+      );
+      itemElements.set(item.id, itemElement);
+    } else {
+      updateItemElement(itemElement, item, state.isEditing);
+    }
+    fragment.appendChild(itemElement);
   });
+
+  listElement.appendChild(fragment);
+
+  itemElements.forEach((element, id) => {
+    if (!nextIds.has(id)) {
+      element.remove();
+      itemElements.delete(id);
+    }
+  });
+
+  currentEditMode = state.isEditing;
 }
