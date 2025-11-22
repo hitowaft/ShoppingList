@@ -31,6 +31,17 @@ const AUTH_CODE_TTL_MINUTES = Number(process.env.ALEXA_AUTH_CODE_TTL_MINUTES || 
 const ACCESS_TOKEN_TTL_SECONDS = Number(process.env.ALEXA_ACCESS_TOKEN_TTL_SECONDS || 3600);
 const REFRESH_TOKEN_TTL_DAYS = Number(process.env.ALEXA_REFRESH_TOKEN_TTL_DAYS || 30);
 
+const resolvedRegion = process.env.FUNCTION_REGION || "asia-northeast1";
+const resolvedMinInstances = Number.isFinite(Number(process.env.ALEXA_MIN_INSTANCES))
+  ? Math.max(0, Number(process.env.ALEXA_MIN_INSTANCES))
+  : 0;
+const alexaFunctionOptions = {
+  region: resolvedRegion,
+  minInstances: resolvedMinInstances,
+  memoryMiB: 512,
+  concurrency: 10,
+};
+
 const requiredAuthParams = ["response_type", "client_id", "redirect_uri", "state"];
 
 const linkCodeCollection = db.collection("alexaLinkCodes");
@@ -1010,7 +1021,7 @@ const alexaSkill = skillBuilder
   .withCustomUserAgent("shopping-list/alexa")
   .create();
 
-exports.alexaShoppingList = onRequest(async (req, res) => {
+exports.alexaShoppingList = onRequest(alexaFunctionOptions, async (req, res) => {
   try {
     const requestBody = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     const requestType = requestBody?.request?.type || null;
@@ -1364,7 +1375,7 @@ alexaAuthApp.get("/", (req, res) => {
   res.status(200).send("ok");
 });
 
-exports.alexaAuthService = onRequest((req, res) => alexaAuthApp(req, res));
+exports.alexaAuthService = onRequest(alexaFunctionOptions, (req, res) => alexaAuthApp(req, res));
 
 exports.acceptInvite = onCall({cors: true}, async (request) => {
   const inviteCode = request.data?.inviteCode;
@@ -1437,7 +1448,7 @@ exports.acceptInvite = onCall({cors: true}, async (request) => {
   };
 });
 
-exports.createAlexaLinkCode = onCall({cors: true}, async (request) => {
+exports.createAlexaLinkCode = onCall({...alexaFunctionOptions, cors: true}, async (request) => {
   const listId = request.data?.listId;
   if (!listId || typeof listId !== "string") {
     throw new HttpsError("invalid-argument", "有効なリストIDを指定してください。");

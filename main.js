@@ -302,6 +302,7 @@ const getListItemsCollection = (listId) => collection(db, "lists", listId, "item
 const listsCollection = collection(db, "lists");
 
 const ACTIVE_LIST_STORAGE_KEY = 'shopping-list.activeListId';
+const AUTO_START_PREFERENCE_KEY = 'shopping-list.autoStart';
 
 const setUserStatusMessage = (message) => {
   if (userStatusLabel) {
@@ -1245,6 +1246,11 @@ async function activateListForUser(user, resolvedList) {
   }
   postLoadTasks.push(ensureDeviceRecovery(resolvedListId, user.uid));
   await Promise.all(postLoadTasks);
+  try {
+    localStorage.setItem(AUTO_START_PREFERENCE_KEY, '1');
+  } catch (error) {
+    console.warn('自動開始設定の保存に失敗しました:', error);
+  }
 
   if (createInviteButton) {
     createInviteButton.disabled = false;
@@ -1430,6 +1436,11 @@ const handleStartListWithoutLogin = async () => {
       resolvedList = await createNewListForUser(authUser);
     }
     await activateListForUser(authUser, resolvedList);
+    try {
+      localStorage.setItem(AUTO_START_PREFERENCE_KEY, '1');
+    } catch (error) {
+      console.warn('自動開始設定の保存に失敗しました:', error);
+    }
   } catch (error) {
     console.error('新しいリストの作成に失敗しました:', error);
     alert(error?.message ?? '新しいリストを作成できませんでした。時間をおいて再試しください。');
@@ -1485,6 +1496,43 @@ editModeButton.addEventListener('click', () => {
   toggleEditMode();
   handleStateUpdate();
 })
+
+const maybeStartReturningUser = async () => {
+  if (isCreatingList || state.activeListId) {
+    return;
+  }
+  let shouldAutoStart = false;
+  try {
+    shouldAutoStart = localStorage.getItem(AUTO_START_PREFERENCE_KEY) === '1';
+  } catch (error) {
+    console.warn('自動開始設定の読み込みに失敗しました:', error);
+  }
+  if (!shouldAutoStart) {
+    return;
+  }
+  isCreatingList = true;
+  setUserStatusMessage('リストを準備しています…');
+  try {
+    const authUser = state.user ?? await ensureAuthUser();
+    if (!authUser) {
+      return;
+    }
+    const resolvedList = await ensureActiveList(authUser);
+    if (resolvedList) {
+      hideStartScreen();
+      await activateListForUser(authUser, resolvedList);
+      return;
+    }
+    setUserStatusMessage('ボタンを押して買い物リストを開始しましょう。');
+  } catch (error) {
+    console.error('自動開始に失敗しました:', error);
+    setUserStatusMessage('リストを準備できませんでした。手動で開始してください。');
+  } finally {
+    resetStartButtonState();
+  }
+};
+
+maybeStartReturningUser();
 
 signOutButton?.addEventListener('click', async () => {
   const confirmed = window.confirm('現在のリストと端末に保存された利用者IDをリセットします。よろしいですか？');
