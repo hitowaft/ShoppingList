@@ -10,6 +10,7 @@ const inputElement = document.getElementById('itemInput');
 const addButton = document.getElementById('addButton');
 const listElement = document.getElementById('itemList');
 const clearCompletedButton = document.getElementById('clearCompletedButton');
+const showCompletedButton = document.getElementById('showCompletedButton');
 const editModeButton = document.getElementById('editModeButton');
 const signOutButton = document.getElementById('signOutButton');
 const userStatusLabel = document.getElementById('userStatus');
@@ -1069,7 +1070,7 @@ const resolveItemIndex = (items, indexHint, id) => {
 function startItemsSubscription(listId) {
   if (!listId) return;
 
-  const itemsQuery = query(getListItemsCollection(listId), orderBy("createdAt", "desc"));
+  const itemsQuery = query(getListItemsCollection(listId), where("completed", "==", false), orderBy("createdAt", "desc"));
 
   unsubscribeFromItems = onSnapshot(
     itemsQuery,
@@ -1404,6 +1405,55 @@ const handleClearCompleted = () => {
   clearCompletedDbItems(state.activeListId);
 };
 
+const handleShowCompleted = async () => {
+  if (!state.userId || !state.activeListId) return;
+
+  showCompletedButton.disabled = true;
+  showCompletedButton.textContent = '読み込み中…';
+
+  try {
+      const listId = state.activeListId;
+      const q = query(
+          getListItemsCollection(listId),
+          where("completed", "==", true),
+          orderBy("createdAt", "desc"),
+          limit(50)
+      );
+      const querySnapshot = await getDocs(q);
+      
+      const existingItemIds = new Set(state.items.map(item => item.id));
+      const newItems = [];
+
+      querySnapshot.forEach((doc) => {
+          if (!existingItemIds.has(doc.id)) {
+              const itemData = doc.data();
+              newItems.push({
+                  id: doc.id,
+                  text: typeof itemData.name === 'string' ? itemData.name : '',
+                  completed: true,
+              });
+          }
+      });
+
+      if (newItems.length > 0) {
+          state.items.push(...newItems);
+          handleStateUpdate();
+      }
+
+      if (querySnapshot.empty || newItems.length === 0) {
+          showCompletedButton.textContent = '完了済みアイテムはありません';
+      } else {
+          showCompletedButton.classList.add('is-hidden');
+      }
+
+  } catch (error) {
+      console.error("完了済みアイテムの読み込みに失敗しました:", error);
+      alert("完了済みアイテムの読み込みに失敗しました。");
+      showCompletedButton.disabled = false;
+      showCompletedButton.textContent = '完了済みを表示';
+  }
+};
+
 const handleUpdateItemText = async (itemId, newText) => {
   if (!state.userId || !state.activeListId) return;
   try {
@@ -1473,6 +1523,7 @@ function enterKeyPress(event) {
 }
 
 clearCompletedButton.addEventListener('click', handleClearCompleted);
+showCompletedButton.addEventListener('click', handleShowCompleted);
 
 startListButton?.addEventListener('click', handleStartListWithoutLogin);
 createInviteButton?.addEventListener('click', handleCreateInviteLink);
