@@ -1440,8 +1440,12 @@ const handleShowCompleted = async () => {
           handleStateUpdate();
       }
 
-      if (querySnapshot.empty || newItems.length === 0) {
+      if (querySnapshot.empty) {
           showCompletedButton.textContent = '完了済みアイテムはありません';
+          // The button is already disabled, so it won't be clickable.
+      } else if (newItems.length === 0) {
+          showCompletedButton.textContent = 'すべての完了済みアイテムを表示しました';
+          showCompletedButton.classList.add('is-hidden');
       } else {
           showCompletedButton.classList.add('is-hidden');
       }
