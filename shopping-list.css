@@ -445,6 +445,17 @@ button.secondary:active {
   box-shadow: 0 12px 20px rgba(39, 49, 58, 0.08);
 }
 
+.item-list li.item-list__loading {
+  justify-content: center;
+  color: var(--muted);
+  cursor: default;
+}
+
+.item-list li.item-list__loading:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .item-list li.completed {
   transition: opacity 0.2s ease;
   border-color: rgba(39, 49, 58, 0.08);

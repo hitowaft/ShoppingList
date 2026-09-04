@@ -321,6 +321,39 @@ const setUserStatusMessage = (message) => {
   }
 };
 
+const showItemsLoading = () => {
+  if (!listElement) return;
+  listElement.setAttribute('aria-busy', 'true');
+  inputElement.disabled = true;
+  addButton.disabled = true;
+  showCompletedButton.disabled = true;
+  clearCompletedButton.disabled = true;
+  const loadingItem = document.createElement('li');
+  loadingItem.className = 'item-list__loading';
+  loadingItem.textContent = 'リストを読み込み中…';
+  listElement.replaceChildren(loadingItem);
+};
+
+const finishItemsLoading = () => {
+  if (!listElement) return;
+  listElement.removeAttribute('aria-busy');
+  listElement.querySelector('.item-list__loading')?.remove();
+  inputElement.disabled = state.isEditing;
+  addButton.disabled = state.isEditing;
+  showCompletedButton.disabled = false;
+  clearCompletedButton.disabled = false;
+};
+
+try {
+  if (localStorage.getItem(AUTO_START_PREFERENCE_KEY) === '1') {
+    hideStartScreen();
+    setUserStatusMessage('リストを読み込み中…');
+    showItemsLoading();
+  }
+} catch (error) {
+  console.warn('自動開始設定の読み込みに失敗しました:', error);
+}
+
 const defaultInviteStatusMessage = 'リンクはここに表示されます。';
 let inviteStatusResetTimer = null;
 
@@ -1085,13 +1118,17 @@ const resolveItemIndex = (items, indexHint, id) => {
 function startItemsSubscription(listId) {
   if (!listId) return;
 
+  showItemsLoading();
+
   const itemsQuery = query(getListItemsCollection(listId), where("completed", "==", false), orderBy("createdAt", "desc"));
 
   unsubscribeFromItems = onSnapshot(
     itemsQuery,
     (querySnapshot) => {
+      finishItemsLoading();
       const changes = querySnapshot.docChanges();
       if (!changes.length) {
+        handleStateUpdate();
         return;
       }
 
@@ -1148,7 +1185,9 @@ function startItemsSubscription(listId) {
       }
     },
     (error) => {
+      finishItemsLoading();
       console.error("買い物リストの購読中にエラーが発生しました:", error);
+      setUserStatusMessage('リストを読み込めませんでした。');
     }
   );
 }
@@ -1604,41 +1643,6 @@ editModeButton.addEventListener('click', () => {
   toggleEditMode();
   handleStateUpdate();
 })
-
-const maybeStartReturningUser = async () => {
-  if (isCreatingList || state.activeListId) {
-    return;
-  }
-  let shouldAutoStart = false;
-  try {
-    shouldAutoStart = localStorage.getItem(AUTO_START_PREFERENCE_KEY) === '1';
-  } catch (error) {
-    console.warn('自動開始設定の読み込みに失敗しました:', error);
-  }
-  if (!shouldAutoStart) {
-    return;
-  }
-  isCreatingList = true;
-  setUserStatusMessage('リストを準備しています…');
-  try {
-    const authUser = state.user ?? await ensureAuthUser();
-    if (!authUser) {
-      return;
-    }
-    const resolvedList = await ensureActiveList(authUser);
-    if (resolvedList) {
-      hideStartScreen();
-      await activateListForUser(authUser, resolvedList);
-      return;
-    }
-    setUserStatusMessage('ボタンを押して買い物リストを開始しましょう。');
-  } catch (error) {
-    console.error('自動開始に失敗しました:', error);
-    setUserStatusMessage('リストを準備できませんでした。手動で開始してください。');
-  } finally {
-    resetStartButtonState();
-  }
-};
 
 signOutButton?.addEventListener('click', async () => {
   const confirmed = window.confirm('現在のリストと端末に保存された利用者IDをリセットします。よろしいですか？');
