@@ -45,8 +45,3 @@ export const signOutUser = async () => {
     console.error("サインアウト後の匿名サインインに失敗しました:", error);
   }
 };
-
-// 初期化時に匿名ユーザーを確保しておく
-ensureAnonymousUser().catch((error) => {
-  console.error("初期匿名サインインに失敗しました:", error);
-});

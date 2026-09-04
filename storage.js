@@ -50,27 +50,23 @@ export async function deleteDbItem(id, listId) {
  * @param {string} listId - 操作対象のリストID
  */
 export async function clearCompletedDbItems(listId) {
-  if (!listId) return;
-  try {
-    // 1. 検索条件を作る
-    // 'shopping-list'コレクションの中から、'completed'フィールドが true のものを探す、という条件
-    const q = query(listItemsCollection(listId), where("completed", "==", true));
+  if (!listId) return [];
 
-    // 2. 条件に合うドキュメントをすべて取得する
-    const querySnapshot = await getDocs(q);
+  const q = query(listItemsCollection(listId), where("completed", "==", true));
+  const querySnapshot = await getDocs(q);
+  const completedDocs = querySnapshot.docs;
 
+  // Firestore のバッチ上限を超えないよう分割して削除する。
+  const batchSize = 450;
+  for (let offset = 0; offset < completedDocs.length; offset += batchSize) {
     const batch = writeBatch(db);
-    querySnapshot.forEach((doc) => {
-      batch.delete(doc.ref);
+    completedDocs.slice(offset, offset + batchSize).forEach((itemDoc) => {
+      batch.delete(itemDoc.ref);
     });
-
     await batch.commit();
-    
-    console.log("完了済みドキュメントの削除に成功しました！");
-
-  } catch (error) {
-    console.error("完了済みドキュメントの削除中にエラーが発生しました:", error);
   }
+
+  return completedDocs.map((itemDoc) => itemDoc.id);
 }
 
 /**

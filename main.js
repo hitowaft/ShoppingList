@@ -597,7 +597,7 @@ const attemptRestoreFromRecovery = async (userUid) => {
       : '共有買い物リスト';
     state.activeListId = recoveredListId;
     state.activeListName = recoveredName;
-    sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, recoveredListId);
+    localStorage.setItem(ACTIVE_LIST_STORAGE_KEY, recoveredListId);
     saveDeviceRecovery({
       listId: recoveredListId,
       recoveryKey: storedRecovery.recoveryKey,
@@ -865,7 +865,7 @@ const handleApplyDeviceRecovery = async () => {
     state.activeListName = typeof data?.listName === 'string' && data.listName.length > 0
       ? data.listName
       : '共有買い物リスト';
-    sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, targetListId);
+    localStorage.setItem(ACTIVE_LIST_STORAGE_KEY, targetListId);
     saveDeviceRecovery({ listId: targetListId, recoveryKey, lastRegisteredAt: Date.now() });
     stopItemsSubscription();
     state.items = [];
@@ -1149,13 +1149,13 @@ function resetListState() {
   selectedDeviceIds.clear();
   renderDeviceManagementList();
   updateDeviceManagementStatus();
-  sessionStorage.removeItem(ACTIVE_LIST_STORAGE_KEY);
+  localStorage.removeItem(ACTIVE_LIST_STORAGE_KEY);
 }
 
 async function ensureActiveList(user) {
   const userUid = user.uid;
   state.userId = userUid;
-  const storedListId = sessionStorage.getItem(ACTIVE_LIST_STORAGE_KEY);
+  const storedListId = localStorage.getItem(ACTIVE_LIST_STORAGE_KEY);
 
   if (storedListId) {
     try {
@@ -1165,14 +1165,14 @@ async function ensureActiveList(user) {
       if (storedListSnapshot.exists() && Array.isArray(storedListData?.members) && storedListData.members.includes(userUid)) {
         state.activeListId = storedListSnapshot.id;
         state.activeListName = storedListData.name ?? '共有買い物リスト';
-        sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, storedListSnapshot.id);
+        localStorage.setItem(ACTIVE_LIST_STORAGE_KEY, storedListSnapshot.id);
         return { listId: storedListSnapshot.id, listData: storedListData };
       }
     } catch (error) {
       console.warn('保存済みリストの読み込みに失敗しました:', error);
     }
 
-    sessionStorage.removeItem(ACTIVE_LIST_STORAGE_KEY);
+    localStorage.removeItem(ACTIVE_LIST_STORAGE_KEY);
   }
 
   const recoveredList = await attemptRestoreFromRecovery(userUid);
@@ -1187,7 +1187,7 @@ async function ensureActiveList(user) {
     const firstListData = firstList.data();
     state.activeListId = firstList.id;
     state.activeListName = firstListData.name ?? '共有買い物リスト';
-    sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, firstList.id);
+    localStorage.setItem(ACTIVE_LIST_STORAGE_KEY, firstList.id);
     return { listId: firstList.id, listData: firstListData };
   }
 
@@ -1210,7 +1210,7 @@ async function createNewListForUser(user) {
 
   state.activeListId = newListRef.id;
   state.activeListName = listName;
-  sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, newListRef.id);
+  localStorage.setItem(ACTIVE_LIST_STORAGE_KEY, newListRef.id);
 
   return {
     listId: newListRef.id,
@@ -1287,7 +1287,7 @@ async function handleSignedIn(user) {
             listData: joinedListSnapshot.exists() ? joinedListSnapshot.data() : null,
           };
           state.activeListId = joinedListId;
-          sessionStorage.setItem(ACTIVE_LIST_STORAGE_KEY, joinedListId);
+          localStorage.setItem(ACTIVE_LIST_STORAGE_KEY, joinedListId);
           setInviteStatusMessage('招待が承認されました。');
         } else {
           setInviteStatusMessage('招待の処理が完了しました。');
@@ -1400,9 +1400,27 @@ const handleToggleItem = async (itemId) => {
   
 };
 
-const handleClearCompleted = () => {
+const handleClearCompleted = async () => {
   if (!state.userId || !state.activeListId) return;
-  clearCompletedDbItems(state.activeListId);
+
+  clearCompletedButton.disabled = true;
+  const originalButtonText = clearCompletedButton.textContent;
+  clearCompletedButton.textContent = '削除中…';
+
+  try {
+    await clearCompletedDbItems(state.activeListId);
+    state.items = state.items.filter((item) => !item.completed);
+    handleStateUpdate();
+    showCompletedButton.classList.remove('is-hidden');
+    showCompletedButton.disabled = false;
+    showCompletedButton.textContent = '完了済みを表示';
+  } catch (error) {
+    console.error('完了済みアイテムの削除に失敗しました:', error);
+    alert('完了済みアイテムの削除に失敗しました。');
+  } finally {
+    clearCompletedButton.disabled = false;
+    clearCompletedButton.textContent = originalButtonText;
+  }
 };
 
 const handleShowCompleted = async () => {
@@ -1586,8 +1604,6 @@ const maybeStartReturningUser = async () => {
     resetStartButtonState();
   }
 };
-
-maybeStartReturningUser();
 
 signOutButton?.addEventListener('click', async () => {
   const confirmed = window.confirm('現在のリストと端末に保存された利用者IDをリセットします。よろしいですか？');
