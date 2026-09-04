@@ -297,6 +297,7 @@ const refreshListStatus = async (listId) => {
 };
 
 let unsubscribeFromItems = null;
+let completedItemsVisible = false;
 
 const getListItemsCollection = (listId) => collection(db, "lists", listId, "items");
 
@@ -304,6 +305,15 @@ const listsCollection = collection(db, "lists");
 
 const ACTIVE_LIST_STORAGE_KEY = 'shopping-list.activeListId';
 const AUTO_START_PREFERENCE_KEY = 'shopping-list.autoStart';
+
+const resetCompletedItemsView = () => {
+  completedItemsVisible = false;
+  showCompletedButton.disabled = false;
+  showCompletedButton.textContent = '完了済みを表示';
+  showCompletedButton.classList.remove('is-hidden');
+  clearCompletedButton.disabled = false;
+  clearCompletedButton.classList.add('is-hidden');
+};
 
 const setUserStatusMessage = (message) => {
   if (userStatusLabel) {
@@ -1061,7 +1071,12 @@ const handleStateUpdate = () => {
 };
 
 const resolveItemIndex = (items, indexHint, id) => {
-  if (typeof indexHint === 'number' && indexHint >= 0 && indexHint < items.length) {
+  if (
+    typeof indexHint === 'number' &&
+    indexHint >= 0 &&
+    indexHint < items.length &&
+    items[indexHint]?.id === id
+  ) {
     return indexHint;
   }
   return items.findIndex((item) => item.id === id);
@@ -1091,6 +1106,10 @@ function startItemsSubscription(listId) {
         };
 
         if (change.type === 'added') {
+          const existingIndex = state.items.findIndex((item) => item.id === change.doc.id);
+          if (existingIndex !== -1) {
+            state.items.splice(existingIndex, 1);
+          }
           const targetIndex = typeof change.newIndex === 'number'
             ? Math.min(change.newIndex, state.items.length)
             : state.items.length;
@@ -1142,6 +1161,7 @@ function stopItemsSubscription() {
 }
 
 function resetListState() {
+  resetCompletedItemsView();
   state.activeListId = null;
   state.activeListName = '';
   state.items = [];
@@ -1233,6 +1253,7 @@ async function activateListForUser(user, resolvedList) {
   hideStartScreen();
 
   stopItemsSubscription();
+  resetCompletedItemsView();
   state.items = [];
   handleStateUpdate();
   startItemsSubscription(resolvedListId);
@@ -1414,6 +1435,8 @@ const handleClearCompleted = async () => {
     showCompletedButton.classList.remove('is-hidden');
     showCompletedButton.disabled = false;
     showCompletedButton.textContent = '完了済みを表示';
+    clearCompletedButton.classList.add('is-hidden');
+    completedItemsVisible = false;
   } catch (error) {
     console.error('完了済みアイテムの削除に失敗しました:', error);
     alert('完了済みアイテムの削除に失敗しました。');
@@ -1425,6 +1448,15 @@ const handleClearCompleted = async () => {
 
 const handleShowCompleted = async () => {
   if (!state.userId || !state.activeListId) return;
+
+  if (completedItemsVisible) {
+      state.items = state.items.filter((item) => !item.completed);
+      completedItemsVisible = false;
+      handleStateUpdate();
+      showCompletedButton.textContent = '完了済みを表示';
+      clearCompletedButton.classList.add('is-hidden');
+      return;
+  }
 
   showCompletedButton.disabled = true;
   showCompletedButton.textContent = '読み込み中…';
@@ -1460,13 +1492,16 @@ const handleShowCompleted = async () => {
 
       if (querySnapshot.empty) {
           showCompletedButton.textContent = '完了済みアイテムはありません';
-          // The button is already disabled, so it won't be clickable.
-      } else if (newItems.length === 0) {
-          showCompletedButton.textContent = 'すべての完了済みアイテムを表示しました';
-          showCompletedButton.classList.add('is-hidden');
+          window.setTimeout(() => {
+              showCompletedButton.textContent = '完了済みを表示';
+          }, 1500);
       } else {
-          showCompletedButton.classList.add('is-hidden');
+          completedItemsVisible = true;
+          showCompletedButton.textContent = '完了済みを非表示';
+          clearCompletedButton.classList.remove('is-hidden');
       }
+
+      showCompletedButton.disabled = false;
 
   } catch (error) {
       console.error("完了済みアイテムの読み込みに失敗しました:", error);

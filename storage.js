@@ -22,6 +22,7 @@ export async function updateItemStatus(id, currentCompleted, listId) {
     console.log("ドキュメントの更新に成功しました！ ID:", id);
   } catch (error) {
     console.error("ドキュメントの更新中にエラーが発生しました:", error);
+    throw error;
   }
 }
 
