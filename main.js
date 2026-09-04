@@ -1,4 +1,4 @@
-import { db, collection, addDoc, onSnapshot, query, orderBy, where, getDocs, serverTimestamp, doc, setDoc, Timestamp, getDoc, functions, httpsCallable } from "./firebase.js";
+import { db, collection, addDoc, onSnapshot, query, orderBy, limit, where, getDocs, serverTimestamp, doc, setDoc, Timestamp, getDoc, functions, httpsCallable } from "./firebase.js";
 import { state, toggleEditMode } from './state.js';
 import { updateItemStatus, deleteDbItem, clearCompletedDbItems, updateDbItemText } from "./storage.js";
 import { initUI, render } from "./ui.js";
